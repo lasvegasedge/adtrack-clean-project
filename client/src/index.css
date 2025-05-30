@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* FORCEFUL removal of blue lightning bolt button */
+button[class*="fixed"][class*="bg-blue"][class*="rounded"],
+[class*="fixed"][class*="bg-blue"][class*="rounded-full"],
+.fixed.bottom-16.right-4,
+[data-boost-button],
+[data-bot-button],
+a.fixed,
+.fixed svg.zap,
+nav + .fixed,
+nav ~ .fixed button,
+button.fixed.bg-blue-600,
+button.fixed.bg-blue-500,
+a[href*="plans"].fixed,
+a[aria-label*="boost"],
+button[aria-label*="boost"],
+button.zap-button,
+div.bottom-0 button.bg-blue-500,
+div.bottom-0 button.bg-blue-600,
+.bottom-0.right-0 a.bg-blue-500,
+nav + div > button.bg-blue-500,
+nav ~ div > button.bg-blue-500 {
+  display: none !important;
+  position: absolute !important;
+  z-index: -9999 !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transform: scale(0) !important;
+  width: 0 !important;
+  height: 0 !important;
+  clip: rect(0, 0, 0, 0) !important;
+  overflow: hidden !important;
+}
+
+/* Target bottom navigation lightning button specifically */
+nav.fixed.bottom-0 button.bg-blue-500,
+nav.fixed.bottom-0 button.bg-blue-600,
+a[href*="plans"] + button.bg-blue-500,
+a[href*="plans"] ~ button.bg-blue-500,
+[href*="plans"] ~ button.bg-blue-500 {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  position: fixed !important;
+  z-index: -9999 !important;
+}
+
+/* Custom styles for checkbox */
+input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-color: #fff;
+  margin: 0;
+  font: inherit;
+  color: currentColor;
+  border: 2px solid #1976D2;
+  border-radius: 4px;
+  display: grid;
+  place-content: center;
+}
+
+input[type="checkbox"]::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  transform: scale(0);
+  transition: 120ms transform ease-in-out;
+  box-shadow: inset 1em 1em #1976D2;
+  transform-origin: center;
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
+
+input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+/* Custom styled checkbox for ROI Leaderboard */
+.selection-button {
+  display: inline-block;
+  width: 100px;
+  padding: 6px 12px;
+  text-align: center;
+  font-weight: bold;
+  font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  border: 2px solid transparent;
+}
+
+.selection-button.selected {
+  background-color: #2563eb;
+  color: white;
+  border: 2px solid #1d4ed8;
+}
+
+.selection-button.unselected {
+  background-color: #f3f4f6;
+  color: #374151;
+  border: 2px solid #d1d5db;
+}
+
+.selection-button:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}

@@ -1,0 +1,802 @@
+import { useState, useEffect, useRef } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { 
+  Card, 
+  CardContent, 
+  CardDescription, 
+  CardFooter, 
+  CardHeader, 
+  CardTitle 
+} from "@/components/ui/card";
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from "@/components/ui/select";
+import { 
+  FormControl, 
+  FormDescription, 
+  FormField, 
+  FormItem, 
+  FormLabel, 
+  FormMessage 
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { 
+  RefreshCw, 
+  Mail, 
+  Save, 
+  RotateCcw, 
+  Eye, 
+  Send, 
+  FileText, 
+  HelpCircle 
+} from "lucide-react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
+// Define email template schema
+const emailTemplateSchema = z.object({
+  id: z.number().optional(),
+  templateType: z.string(),
+  subject: z.string().min(1, "Subject is required"),
+  textContent: z.string().min(1, "Text content is required"),
+  htmlContent: z.string().min(1, "HTML content is required"),
+  isCustomized: z.boolean().optional(),
+});
+
+type EmailTemplateFormValues = z.infer<typeof emailTemplateSchema>;
+
+// Test email schema
+const testEmailSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+});
+
+type TestEmailFormValues = z.infer<typeof testEmailSchema>;
+
+// Define email template types and friendly names
+const templateTypes = [
+  { id: "passwordReset", name: "Password Reset" },
+  { id: "roiAlert", name: "ROI Alert" },
+  { id: "campaignReminder", name: "Campaign Reminder" },
+  { id: "weeklyReport", name: "Weekly Report" },
+  { id: "verifyEmail", name: "Email Verification" },
+  { id: "newAccountRequest", name: "New Account Request" },
+  { id: "accountApproved", name: "Account Approved" },
+  { id: "accountRejected", name: "Account Rejected" },
+];
+
+// Define template variables by type
+const templateVariables: Record<string, { name: string, description: string, example: string }[]> = {
+  passwordReset: [
+    { name: "username", description: "User's name or email", example: "john.doe@example.com" },
+    { name: "resetLink", description: "Password reset URL", example: "https://adtrack.online/reset-password?token=xyz123" },
+  ],
+  roiAlert: [
+    { name: "campaignName", description: "Name of the campaign", example: "Summer Facebook Promotion" },
+    { name: "roi", description: "ROI percentage value", example: "24.5" },
+  ],
+  campaignReminder: [
+    { name: "campaignName", description: "Name of the campaign", example: "Google Ads Q2" },
+    { name: "daysInactive", description: "Number of days inactive", example: "14" },
+  ],
+  weeklyReport: [
+    { name: "businessName", description: "Name of the business", example: "Acme Inc." },
+    { name: "totalCampaigns", description: "Number of active campaigns", example: "5" },
+    { name: "averageRoi", description: "Average ROI percentage", example: "32.7" },
+  ],
+  verifyEmail: [
+    { name: "username", description: "User's name or email", example: "business@example.com" },
+    { name: "verificationToken", description: "Email verification token", example: "a1b2c3d4e5f6" },
+    { name: "baseUrl", description: "Base URL of the application", example: "https://adtrack.online" },
+  ],
+  newAccountRequest: [
+    { name: "username", description: "Applicant's email address", example: "business@example.com" },
+    { name: "phoneNumber", description: "Applicant's phone number", example: "555-123-4567" },
+    { name: "approvalUrl", description: "URL to approval dashboard", example: "https://adtrack.online/admin?tab=approvals" },
+  ],
+  accountApproved: [
+    { name: "username", description: "User's name or email", example: "business@example.com" },
+    { name: "loginUrl", description: "Login URL", example: "https://adtrack.online/login" },
+  ],
+  accountRejected: [
+    { name: "username", description: "User's name or email", example: "business@example.com" },
+    { name: "reason", description: "Reason for rejection", example: "Incomplete business information provided." },
+  ],
+};
+
+export default function EmailTemplates() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedTemplateType, setSelectedTemplateType] = useState<string>("passwordReset");
+  const [previewMode, setPreviewMode] = useState<"html" | "text">("html");
+  const [showVariableReference, setShowVariableReference] = useState(false);
+  const [sendingTestEmail, setSendingTestEmail] = useState(false);
+  const previewIframeRef = useRef<HTMLIFrameElement>(null);
+  
+  // Fetch email templates
+  const { 
+    data: templates, 
+    isLoading,
+    error 
+  } = useQuery({
+    queryKey: ['/api/admin/email-templates'],
+    queryFn: async () => {
+      const response = await fetch('/api/admin/email-templates');
+      if (!response.ok) {
+        throw new Error('Failed to fetch email templates');
+      }
+      return response.json();
+    },
+    staleTime: 60000, // 1 minute
+  });
+  
+  // Create form instance
+  const form = useForm<EmailTemplateFormValues>({
+    resolver: zodResolver(emailTemplateSchema),
+    defaultValues: {
+      templateType: selectedTemplateType,
+      subject: '',
+      textContent: '',
+      htmlContent: '',
+      isCustomized: false,
+    }
+  });
+  
+  // Create test email form
+  const testEmailForm = useForm<TestEmailFormValues>({
+    resolver: zodResolver(testEmailSchema),
+    defaultValues: {
+      email: "",
+    }
+  });
+  
+  // Get the selected template
+  const selectedTemplate = templates?.find(
+    (template: any) => template.templateType === selectedTemplateType
+  );
+  
+  // Get variables for selected template type
+  const currentTemplateVariables = templateVariables[selectedTemplateType] || [];
+  
+  // Define template types and related interfaces to fix TypeScript errors
+  type TemplateType = 'accountApproved' | 'newAccountRequest' | 'passwordReset' | 'roiAlert' | 'campaignReminder' | 'weeklyReport' | 'emailVerification';
+  
+  interface DefaultTemplate {
+    subject: string;
+    textContent: string;
+    htmlContent: string;
+  }
+  
+  // Default templates for when no customized templates exist - define without using variables directly
+  const defaultTemplates: Record<string, DefaultTemplate> = {
+    'accountApproved': {
+      subject: "Congratulations! Your AdTrack Account is Approved",
+      textContent: "WELCOME TO ADTRACK, ${username}!\n\nGreat news! Your account has been approved and is now ready to use.\n\nNEXT STEPS:\n1. Log in to your account\n2. Complete your business profile\n3. Add your first advertising campaign\n4. Explore the ROI tracking dashboard\n\nTo log in now, visit: ${loginUrl}\n\nKEY FEATURES AVAILABLE TO YOU:\n\n- ROI Tracking: Monitor the performance of all your advertising campaigns in real-time.\n- Competitor Analysis: See how your campaigns perform against similar businesses in your area.\n- AI Recommendations: Get smart suggestions to optimize your advertising budget and strategy.\n- Marketing Insights: Translate complex data into actionable business intelligence.\n\nIf you have any questions, our support team is here to help you get started.\n\n© 2025 AdTrack. All rights reserved.",
+      htmlContent: "<div style=\"font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto;\">\n  <div style=\"background-color: #3f57f5; padding: 20px; text-align: center;\">\n    <h1 style=\"color: white; margin: 0;\">Account Approved</h1>\n  </div>\n  \n  <div style=\"padding: 20px; border: 1px solid #e1e1e1; border-top: none;\">\n    <h2>Welcome to AdTrack, ${username}!</h2>\n    \n    <p>Great news! Your account has been approved and is now ready to use.</p>\n    \n    <div style=\"background-color: #f7f9fc; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #4caf50;\">\n      <h3 style=\"margin-top: 0;\">Next Steps:</h3>\n      <ol>\n        <li>Log in to your account</li>\n        <li>Complete your business profile</li>\n        <li>Add your first advertising campaign</li>\n        <li>Explore the ROI tracking dashboard</li>\n      </ol>\n    </div>\n    \n    <div style=\"text-align: center; margin: 25px 0;\">\n      <a href=\"${loginUrl}\" style=\"display: inline-block; padding: 12px 25px; border-radius: 4px; text-decoration: none; font-weight: bold; background-color: #3f57f5; color: white;\">Log In Now</a>\n    </div>\n    \n    <h3>Key Features Available to You:</h3>\n    <ul>\n      <li><strong>ROI Tracking:</strong> Monitor the performance of all your advertising campaigns in real-time.</li>\n      <li><strong>Competitor Analysis:</strong> See how your campaigns perform against similar businesses in your area.</li>\n      <li><strong>AI Recommendations:</strong> Get smart suggestions to optimize your advertising budget and strategy.</li>\n      <li><strong>Marketing Insights:</strong> Translate complex data into actionable business intelligence.</li>\n    </ul>\n    \n    <p>If you have any questions, our support team is here to help you get started.</p>\n  </div>\n  \n  <div style=\"text-align: center; padding: 15px; font-size: 12px; color: #666;\">\n    © 2025 AdTrack. All rights reserved.\n  </div>\n</div>"
+    },
+    'newAccountRequest': {
+      subject: "New AdTrack Account Request Requires Your Approval",
+      textContent: "ACTION REQUIRED: New Account Request on AdTrack Platform\n\nA new business has registered for AdTrack and is awaiting your approval.\n\nREQUEST DETAILS:\n- Email Address: ${username}\n- Phone Number: ${phoneNumber}\n\nTo APPROVE this request, visit: ${approvalUrl}\nTo REJECT this request, visit: ${approvalUrl}\n\nYou can also review this request in detail on the Admin Dashboard.\n\nSECURITY NOTE: All approval actions are securely logged for audit purposes. For security reasons, this approval link will expire in 24 hours.\n\nThis is an automated message from the AdTrack platform.\n© 2025 AdTrack. All rights reserved.",
+      htmlContent: "<div style=\"font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto;\">\n  <div style=\"background-color: #3f57f5; padding: 20px; text-align: center;\">\n    <h1 style=\"color: white; margin: 0;\">Action Required: New Account Request</h1>\n  </div>\n  \n  <div style=\"padding: 20px; border: 1px solid #e1e1e1; border-top: none;\">\n    <h2>New Account Request</h2>\n    \n    <p>A new business has requested to join the AdTrack platform and is awaiting your approval.</p>\n    \n    <div style=\"background-color: #f7f9fc; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3f57f5;\">\n      <h3 style=\"margin-top: 0;\">Request Details</h3>\n      <p><strong>Email Address:</strong> ${username}</p>\n      <p><strong>Phone Number:</strong> ${phoneNumber}</p>\n    </div>\n    \n    <div style=\"text-align: center; margin: 25px 0;\">\n      <a href=\"${approvalUrl}?action=approve\" style=\"display: inline-block; padding: 12px 25px; border-radius: 4px; text-decoration: none; font-weight: bold; background-color: #4caf50; color: white; margin: 0 10px;\">Approve Account</a>\n      <a href=\"${approvalUrl}?action=reject\" style=\"display: inline-block; padding: 12px 25px; border-radius: 4px; text-decoration: none; font-weight: bold; background-color: #f44336; color: white; margin: 0 10px;\">Reject Account</a>\n    </div>\n    \n    <p>You can also review this request in detail on the <a href=\"${approvalUrl}\" style=\"color: #3f57f5; text-decoration: none;\">Admin Dashboard</a>.</p>\n    \n    <div style=\"background-color: #fffde7; padding: 12px; border-radius: 4px; margin: 20px 0; font-size: 14px;\">\n      <strong>Security Note:</strong> All approval actions are securely logged for audit purposes. For security reasons, this approval link will expire in 24 hours.\n    </div>\n  </div>\n  \n  <div style=\"text-align: center; padding: 15px; font-size: 12px; color: #666;\">\n    © 2025 AdTrack. All rights reserved.\n  </div>\n</div>"
+    },
+    'passwordReset': {
+      subject: "Reset Your AdTrack Password",
+      textContent: "You requested a password reset for your AdTrack account.\n\nTo reset your password, please click the following link:\n${resetLink}\n\nThis link will expire in 1 hour for security reasons.\n\nIf you did not request a password reset, please ignore this email or contact our support team if you have concerns about your account security.\n\n© 2025 AdTrack. All rights reserved.",
+      htmlContent: "<div style=\"font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto;\">\n  <div style=\"background-color: #3f57f5; padding: 20px; text-align: center;\">\n    <h1 style=\"color: white; margin: 0;\">Reset Your Password</h1>\n  </div>\n  \n  <div style=\"padding: 20px; border: 1px solid #e1e1e1; border-top: none;\">\n    <p>You requested a password reset for your AdTrack account.</p>\n    \n    <div style=\"text-align: center; margin: 30px 0;\">\n      <a href=\"${resetLink}\" style=\"display: inline-block; padding: 12px 25px; border-radius: 4px; text-decoration: none; font-weight: bold; background-color: #3f57f5; color: white;\">Reset Password</a>\n    </div>\n    \n    <p>Or copy and paste this link into your browser:</p>\n    <p style=\"background-color: #f7f9fc; padding: 10px; border-radius: 4px; font-size: 14px; word-break: break-all;\">\n      ${resetLink}\n    </p>\n    \n    <div style=\"background-color: #fff8e1; padding: 10px; border-radius: 4px; margin: 20px 0; border-left: 4px solid #ffca28;\">\n      <p style=\"margin: 0;\"><strong>Important:</strong> This link will expire in 1 hour for security reasons.</p>\n    </div>\n    \n    <p>If you did not request a password reset, please ignore this email or contact our support team if you have concerns about your account security.</p>\n  </div>\n  \n  <div style=\"text-align: center; padding: 15px; font-size: 12px; color: #666;\">\n    © 2025 AdTrack | <span style=\"color: #3f57f5; font-weight: 500;\">AI-Powered Solutions</span>. All rights reserved.\n  </div>\n</div>"
+    },
+    'roiAlert': {
+      subject: "ROI Alert: ${campaignName} Performance Update",
+      textContent: "ROI ALERT: CAMPAIGN PERFORMANCE UPDATE\n\nYour campaign \"${campaignName}\" has reached a Return on Investment (ROI) of ${roi}%.\n\nCAMPAIGN DETAILS:\n- Campaign Name: ${campaignName}\n- Current ROI: ${roi}%\n- Industry Average: 72%\n\nLog in to your AdTrack dashboard to view detailed performance metrics and AI-generated optimization suggestions.\n\nThis automated alert is part of AdTrack's real-time performance monitoring system.\n\n© 2025 AdTrack. All rights reserved.",
+      htmlContent: "<div style=\"font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto;\">\n  <div style=\"background-color: #3f57f5; padding: 20px; text-align: center;\">\n    <h1 style=\"color: white; margin: 0;\">ROI Performance Alert</h1>\n  </div>\n  \n  <div style=\"padding: 20px; border: 1px solid #e1e1e1; border-top: none;\">\n    <h2>Campaign Performance Update</h2>\n    \n    <div style=\"background-color: #f0f7ff; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3f57f5;\">\n      <h3 style=\"margin-top: 0; color: #3f57f5;\">${campaignName} Campaign</h3>\n      <p style=\"font-size: 18px;\">Current ROI: <strong style=\"color: #3f57f5; font-size: 22px;\">${roi}%</strong></p>\n      <p>Industry Average: 72%</p>\n    </div>\n    \n    <p>Your advertising campaign \"${campaignName}\" has reached the ROI threshold you've set for alerts.</p>\n    \n    <div style=\"text-align: center; margin: 25px 0;\">\n      <a href=\"https://adtrack.online/dashboard\" style=\"display: inline-block; padding: 12px 25px; border-radius: 4px; text-decoration: none; font-weight: bold; background-color: #3f57f5; color: white;\">View Performance Details</a>\n    </div>\n    \n    <p>Our AI analysis system has generated optimization suggestions to help you further improve your campaign performance.</p>\n  </div>\n  \n  <div style=\"text-align: center; padding: 15px; font-size: 12px; color: #666;\">\n    This automated alert is part of AdTrack's real-time performance monitoring system.<br>\n    © 2025 AdTrack | <span style=\"color: #3f57f5; font-weight: 500;\">AI-Powered Solutions</span>. All rights reserved.\n  </div>\n</div>"
+    },
+    'campaignReminder': {
+      subject: "Action Required: Update Your ${campaignName} Campaign",
+      textContent: "CAMPAIGN UPDATE REMINDER\n\nYour advertising campaign \"${campaignName}\" hasn't been updated in ${daysInactive} days.\n\nTo maintain accurate ROI calculations and performance tracking, please login to your AdTrack dashboard to:\n1. Update your campaign status\n2. Record recent results\n3. Adjust budget allocations if needed\n\nRegular updates help our AI system provide more accurate recommendations and competitive analysis.\n\n© 2025 AdTrack. All rights reserved.",
+      htmlContent: "<div style=\"font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto;\">\n  <div style=\"background-color: #3f57f5; padding: 20px; text-align: center;\">\n    <h1 style=\"color: white; margin: 0;\">Campaign Update Reminder</h1>\n  </div>\n  \n  <div style=\"padding: 20px; border: 1px solid #e1e1e1; border-top: none;\">\n    <div style=\"background-color: #fff8e1; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffa000;\">\n      <h3 style=\"margin-top: 0; color: #e65100;\">Action Required</h3>\n      <p>Your advertising campaign <strong>\"${campaignName}\"</strong> hasn't been updated in <strong>${daysInactive} days</strong>.</p>\n    </div>\n    \n    <p>To maintain accurate ROI calculations and performance tracking, please update your campaign information.</p>\n    \n    <h3>Required Updates:</h3>\n    <ul>\n      <li>Current campaign status</li>\n      <li>Recent performance results</li>\n      <li>Budget adjustments (if any)</li>\n    </ul>\n    \n    <div style=\"text-align: center; margin: 25px 0;\">\n      <a href=\"https://adtrack.online/dashboard\" style=\"display: inline-block; padding: 12px 25px; border-radius: 4px; text-decoration: none; font-weight: bold; background-color: #3f57f5; color: white;\">Update Campaign Now</a>\n    </div>\n    \n    <p style=\"color: #666; font-style: italic;\">Regular updates help our AI system provide more accurate recommendations and competitive analysis for your business.</p>\n  </div>\n  \n  <div style=\"text-align: center; padding: 15px; font-size: 12px; color: #666;\">\n    This is an automated reminder from the AdTrack platform.<br>\n    © 2025 AdTrack | <span style=\"color: #3f57f5; font-weight: 500;\">AI-Powered Solutions</span>. All rights reserved.\n  </div>\n</div>"
+    },
+    'weeklyReport': {
+      subject: "Your Weekly AdTrack Performance Report: ${businessName}",
+      textContent: "WEEKLY PERFORMANCE REPORT: ${businessName}\n\nSummary for the week:\n\nADVERTISING PERFORMANCE:\n- Active Campaigns: ${totalCampaigns}\n- Average ROI: ${averageRoi}%\n- Best Performing: Facebook Ads (182% ROI)\n- Needs Attention: Google Ads (24% ROI)\n\nCOMPETITOR ANALYSIS:\n- Your Rank: 3rd of 12 similar businesses\n- Industry Average ROI: 72%\n- Top Performer: Main Street Bakery (192% ROI)\n\nView your detailed report with AI-generated recommendations by logging into your AdTrack dashboard.\n\n© 2025 AdTrack. All rights reserved.",
+      htmlContent: "<div style=\"font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto;\">\n  <div style=\"background-color: #3f57f5; padding: 20px; text-align: center;\">\n    <h1 style=\"color: white; margin: 0;\">Weekly Performance Report</h1>\n  </div>\n  \n  <div style=\"padding: 20px; border: 1px solid #e1e1e1; border-top: none;\">\n    <h2>${businessName}</h2>\n    <p>Weekly Performance Report</p>\n    \n    <div style=\"margin: 25px 0;\">\n      <h3 style=\"border-bottom: 1px solid #eee; padding-bottom: 8px; color: #3f57f5;\">Advertising Performance</h3>\n      <div style=\"display: flex; justify-content: space-between; flex-wrap: wrap;\">\n        <div style=\"min-width: 120px; padding: 10px; margin-bottom: 15px;\">\n          <div style=\"font-size: 14px; color: #666;\">Active Campaigns</div>\n          <div style=\"font-size: 24px; font-weight: bold; color: #333;\">${totalCampaigns}</div>\n        </div>\n        <div style=\"min-width: 120px; padding: 10px; margin-bottom: 15px;\">\n          <div style=\"font-size: 14px; color: #666;\">Average ROI</div>\n          <div style=\"font-size: 24px; font-weight: bold; color: #3f57f5;\">${averageRoi}%</div>\n        </div>\n        <div style=\"min-width: 120px; padding: 10px; margin-bottom: 15px;\">\n          <div style=\"font-size: 14px; color: #666;\">Industry Rank</div>\n          <div style=\"font-size: 24px; font-weight: bold; color: #333;\">3 of 12</div>\n        </div>\n      </div>\n    </div>\n    \n    <div style=\"margin: 25px 0;\">\n      <h3 style=\"border-bottom: 1px solid #eee; padding-bottom: 8px; color: #3f57f5;\">Campaign Highlights</h3>\n      <div style=\"margin-bottom: 15px;\">\n        <div style=\"background-color: #e8f5e9; padding: 12px; border-radius: 4px; margin-bottom: 10px;\">\n          <span style=\"font-weight: bold;\">Best Performing:</span> Facebook Ads <span style=\"float: right; font-weight: bold; color: #2e7d32;\">182% ROI</span>\n        </div>\n        <div style=\"background-color: #ffebee; padding: 12px; border-radius: 4px;\">\n          <span style=\"font-weight: bold;\">Needs Attention:</span> Google Ads <span style=\"float: right; font-weight: bold; color: #c62828;\">24% ROI</span>\n        </div>\n      </div>\n    </div>\n    \n    <div style=\"text-align: center; margin: 30px 0;\">\n      <a href=\"https://adtrack.online/dashboard\" style=\"display: inline-block; padding: 12px 25px; border-radius: 4px; text-decoration: none; font-weight: bold; background-color: #3f57f5; color: white;\">View Full Report</a>\n    </div>\n    \n    <p style=\"color: #666; font-style: italic;\">Your detailed report includes AI-generated recommendations to help optimize your advertising budget and improve ROI.</p>\n  </div>\n  \n  <div style=\"text-align: center; padding: 15px; font-size: 12px; color: #666;\">\n    This is an automated report from the AdTrack platform.<br>\n    © 2025 AdTrack | <span style=\"color: #3f57f5; font-weight: 500;\">AI-Powered Solutions</span>. All rights reserved.\n  </div>\n</div>"
+    },
+    'emailVerification': {
+      subject: "Verify Your AdTrack Email Address",
+      textContent: "Welcome to AdTrack!\n\nPlease verify your email address by clicking on the following link:\n${verificationLink}\n\nAfter verification, your account will be reviewed by our admin team. You'll receive another email once your account has been approved.\n\nIf you did not create an account with AdTrack, please disregard this email.\n\n© 2025 AdTrack. All rights reserved.",
+      htmlContent: "<div style=\"font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto;\">\n  <div style=\"background-color: #3f57f5; padding: 20px; text-align: center;\">\n    <h1 style=\"color: white; margin: 0;\">Email Verification</h1>\n  </div>\n  \n  <div style=\"padding: 20px; border: 1px solid #e1e1e1; border-top: none;\">\n    <h2>Welcome to AdTrack!</h2>\n    <p>Thank you for registering. To complete your account setup, please verify your email address.</p>\n    \n    <div style=\"text-align: center; margin: 30px 0;\">\n      <a href=\"${verificationLink}\" style=\"display: inline-block; padding: 12px 25px; border-radius: 4px; text-decoration: none; font-weight: bold; background-color: #3f57f5; color: white;\">Verify Email Address</a>\n    </div>\n    \n    <p>Or copy and paste this link into your browser:</p>\n    <p style=\"background-color: #f7f9fc; padding: 10px; border-radius: 4px; font-size: 14px; word-break: break-all;\">\n      ${verificationLink}\n    </p>\n    \n    <div style=\"background-color: #f0f7ff; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3f57f5;\">\n      <p style=\"margin: 0;\"><strong>Next Steps:</strong> After verification, your account will be reviewed by our admin team. You'll receive another email once your account has been approved.</p>\n    </div>\n    \n    <p style=\"color: #666;\">If you did not create an account with AdTrack, please disregard this email.</p>\n  </div>\n  \n  <div style=\"text-align: center; padding: 15px; font-size: 12px; color: #666;\">\n    © 2025 AdTrack | <span style=\"color: #3f57f5; font-weight: 500;\">AI-Powered Solutions</span>. All rights reserved.\n  </div>\n</div>"
+    }
+  };
+  };
+  
+  // Update form values when selection changes
+  useEffect(() => {
+    if (selectedTemplate) {
+      // Template exists in database
+      form.reset({
+        id: selectedTemplate.id,
+        templateType: selectedTemplate.templateType,
+        subject: selectedTemplate.subject || '',
+        textContent: selectedTemplate.textContent || '',
+        htmlContent: selectedTemplate.htmlContent || '',
+        isCustomized: selectedTemplate.isCustomized || false,
+      });
+    } else if (templates) {
+      // Template doesn't exist in database, use default template if available
+      const defaultTemplate = defaultTemplates[selectedTemplateType as TemplateType];
+      if (defaultTemplate) {
+        form.reset({
+          templateType: selectedTemplateType,
+          subject: defaultTemplate.subject,
+          textContent: defaultTemplate.textContent,
+          htmlContent: defaultTemplate.htmlContent,
+          isCustomized: false,
+        });
+      } else {
+        // No default template, use empty form
+        form.reset({
+          templateType: selectedTemplateType,
+          subject: '',
+          textContent: '',
+          htmlContent: '',
+          isCustomized: false,
+        });
+      }
+    }
+  }, [selectedTemplate, selectedTemplateType, templates, form]);
+  
+  // Function to generate preview with sample data
+  const generatePreview = () => {
+    let htmlContent = form.getValues("htmlContent");
+    let textContent = form.getValues("textContent");
+    
+    // Replace variables with sample values
+    if (currentTemplateVariables.length > 0) {
+      currentTemplateVariables.forEach(variable => {
+        const regex = new RegExp(`\\$\\{${variable.name}\\}`, 'g');
+        htmlContent = htmlContent.replace(regex, variable.example);
+        textContent = textContent.replace(regex, variable.example);
+      });
+    }
+
+    // If there are no template variables defined, use placeholder values
+    // This ensures the preview will show something reasonable for missing variables
+    const commonPlaceholderValues = {
+      username: 'john.smith@example.com',
+      loginUrl: 'https://adtrack.online/login',
+      resetLink: 'https://adtrack.online/reset-password',
+      verificationLink: 'https://adtrack.online/verify-email',
+      phoneNumber: '555-123-4567',
+      approvalUrl: 'https://adtrack.online/admin?tab=approvals',
+      businessName: 'Acme Corporation',
+      campaignName: 'Summer Promotion 2025',
+      roi: '157.8'
+    };
+    
+    // Apply placeholder values for any remaining variables
+    Object.entries(commonPlaceholderValues).forEach(([key, value]) => {
+      const regex = new RegExp(`\\$\\{${key}\\}`, 'g');
+      htmlContent = htmlContent.replace(regex, value);
+      textContent = textContent.replace(regex, value);
+    });
+    
+    return { htmlContent, textContent };
+  };
+  
+  // Update iframe content when preview is shown
+  useEffect(() => {
+    if (previewIframeRef.current) {
+      const preview = generatePreview();
+      const iframe = previewIframeRef.current;
+      
+      if (iframe.contentWindow) {
+        iframe.contentWindow.document.open();
+        iframe.contentWindow.document.write(preview.htmlContent);
+        iframe.contentWindow.document.close();
+      }
+    }
+  }, [form.watch("htmlContent")]);
+  
+  // Send test email function
+  const sendTestEmail = async (data: TestEmailFormValues) => {
+    setSendingTestEmail(true);
+    
+    try {
+      const templatePreview = generatePreview();
+      const subject = form.getValues("subject");
+      
+      // Make sure we have a subject
+      if (!subject) {
+        throw new Error("Subject is required. Please save the template with a subject first.");
+      }
+      
+      console.log("Sending test email with subject:", subject);
+      
+      const response = await apiRequest("POST", "/api/admin/send-test-email", {
+        email: data.email,
+        subject: subject,
+        htmlContent: templatePreview.htmlContent,
+        textContent: templatePreview.textContent
+      });
+      
+      const responseData = await response.json();
+      
+      if (response.ok && responseData.success) {
+        toast({
+          title: "Test Email Sent",
+          description: responseData.note || `A test email has been sent to ${data.email}`,
+        });
+      } else if (responseData.message) {
+        // We got a response with an error message
+        toast({
+          title: "Email Preview Generated",
+          description: responseData.note || responseData.message,
+          variant: "default",
+        });
+      } else {
+        // Generic error
+        throw new Error("Failed to send test email. Check console for details.");
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: `Failed to send test email: ${error.message}`,
+        variant: "destructive",
+      });
+    } finally {
+      setSendingTestEmail(false);
+    }
+  };
+  
+  // Mutation for updating template
+  const updateTemplateMutation = useMutation({
+    mutationFn: async (data: EmailTemplateFormValues) => {
+      const method = data.id ? 'PUT' : 'POST';
+      const url = data.id 
+        ? `/api/admin/email-templates/${data.id}` 
+        : '/api/admin/email-templates';
+      
+      const response = await apiRequest(method, url, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/email-templates'] });
+      toast({
+        title: "Template Saved",
+        description: "Email template has been updated successfully.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: `Failed to update template: ${error.message}`,
+        variant: "destructive",
+      });
+    }
+  });
+  
+  // Mutation for resetting template
+  const resetTemplateMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await apiRequest('POST', `/api/admin/email-templates/${id}/reset`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/email-templates'] });
+      toast({
+        title: "Template Reset",
+        description: "Email template has been reset to default.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: `Failed to reset template: ${error.message}`,
+        variant: "destructive",
+      });
+    }
+  });
+  
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const values = form.getValues();
+    updateTemplateMutation.mutate(values);
+  };
+  
+  const handleReset = () => {
+    if (selectedTemplate?.id) {
+      resetTemplateMutation.mutate(selectedTemplate.id);
+    }
+  };
+  
+  const handleTemplateTypeChange = (value: string) => {
+    setSelectedTemplateType(value);
+  };
+  
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Email Templates</CardTitle>
+          <CardDescription>Customize system email templates</CardDescription>
+        </CardHeader>
+        <CardContent className="py-10">
+          <div className="flex justify-center">
+            <RefreshCw className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+  
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Email Templates</CardTitle>
+          <CardDescription>Customize system email templates</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center text-red-500">
+            Failed to load email templates. Please try again.
+          </div>
+          <Button 
+            variant="outline" 
+            onClick={() => queryClient.invalidateQueries({ queryKey: ['/api/admin/email-templates'] })}
+            className="mt-2 mx-auto block"
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+  
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <Mail className="mr-2 h-5 w-5" />
+            <CardTitle>Email Templates</CardTitle>
+          </div>
+          <div className="flex space-x-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" onClick={() => setShowVariableReference(!showVariableReference)}>
+                    <HelpCircle className="h-4 w-4 mr-1" />
+                    Variables
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Show available template variables
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            
+            <Dialog>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        <Eye className="h-4 w-4 mr-1" />
+                        Preview
+                      </Button>
+                    </DialogTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Preview the email template
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+                <DialogHeader>
+                  <DialogTitle>Email Preview: {form.getValues("subject")}</DialogTitle>
+                  <DialogDescription>
+                    Preview how your email will appear to recipients
+                  </DialogDescription>
+                </DialogHeader>
+                <Tabs value={previewMode} onValueChange={(value) => setPreviewMode(value as "html" | "text")} className="mt-4">
+                  <TabsList className="mb-4">
+                    <TabsTrigger value="html">HTML View</TabsTrigger>
+                    <TabsTrigger value="text">Plain Text View</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="html" className="h-[50vh] overflow-auto border rounded-md">
+                    <iframe 
+                      ref={previewIframeRef}
+                      className="w-full h-full" 
+                      title="Email Preview"
+                      sandbox="allow-same-origin"
+                    />
+                  </TabsContent>
+                  <TabsContent value="text" className="h-[50vh] overflow-auto font-mono text-sm bg-gray-50 p-4 border rounded-md whitespace-pre-wrap">
+                    {generatePreview().textContent}
+                  </TabsContent>
+                </Tabs>
+              </DialogContent>
+            </Dialog>
+            
+            <Dialog>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        <Send className="h-4 w-4 mr-1" />
+                        Send Test
+                      </Button>
+                    </DialogTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Send a test email
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Send Test Email</DialogTitle>
+                  <DialogDescription>
+                    Send a test email to verify this template
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={testEmailForm.handleSubmit(sendTestEmail)}>
+                  <div className="space-y-4 py-4">
+                    <FormField
+                      control={testEmailForm.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Recipient Email</FormLabel>
+                          <FormControl>
+                            <Input placeholder="your@email.com" {...field} />
+                          </FormControl>
+                          <FormDescription>
+                            Enter an email address to send a test version of this template.
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <DialogFooter className="gap-2">
+                    <DialogClose asChild>
+                      <Button variant="outline" type="button">Cancel</Button>
+                    </DialogClose>
+                    <Button type="submit" disabled={sendingTestEmail}>
+                      {sendingTestEmail ? (
+                        <>
+                          <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                          Sending...
+                        </>
+                      ) : "Send Test Email"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </div>
+        <CardDescription>Customize system email templates for user notifications</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Template Variable Reference */}
+          {showVariableReference && (
+            <div className="lg:col-span-1">
+              <Card>
+                <CardHeader className="py-3">
+                  <CardTitle className="text-sm flex items-center">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Available Variables
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="py-2">
+                  {currentTemplateVariables.length > 0 ? (
+                    <div className="space-y-3">
+                      {currentTemplateVariables.map((variable) => (
+                        <div key={variable.name} className="border rounded-md p-2">
+                          <div className="font-mono text-sm bg-gray-100 px-2 py-1 rounded mb-1">
+                            ${`{${variable.name}}`}
+                          </div>
+                          <p className="text-xs text-gray-600">{variable.description}</p>
+                          <p className="text-xs mt-1">
+                            <span className="font-medium">Example:</span> {variable.example}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">No variables available for this template type.</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+          
+          {/* Template Editor */}
+          <div className={showVariableReference ? "lg:col-span-3" : "lg:col-span-4"}>
+            <div className="mb-6">
+              <FormLabel>Template Type</FormLabel>
+              <Select 
+                value={selectedTemplateType} 
+                onValueChange={handleTemplateTypeChange}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a template type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {templateTypes.map((type) => (
+                    <SelectItem key={type.id} value={type.id}>
+                      {type.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-gray-500 mt-2">
+                {getTemplateDescription(selectedTemplateType)}
+              </p>
+            </div>
+            
+            <div className="space-y-4">
+              <FormField
+                control={form.control}
+                name="subject"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email Subject</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Email subject line" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <Tabs defaultValue="text" className="mt-4">
+                <TabsList>
+                  <TabsTrigger value="text">Text Version</TabsTrigger>
+                  <TabsTrigger value="html">HTML Version</TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="text">
+                  <FormField
+                    control={form.control}
+                    name="textContent"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Text Version</FormLabel>
+                        <FormControl>
+                          <Textarea 
+                            placeholder="Enter the plain text version of the email" 
+                            className="min-h-[200px] font-mono"
+                            {...field} 
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Plain text version for email clients that don't support HTML.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </TabsContent>
+                
+                <TabsContent value="html">
+                  <FormField
+                    control={form.control}
+                    name="htmlContent"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>HTML Version</FormLabel>
+                        <FormControl>
+                          <Textarea 
+                            placeholder="Enter the HTML version of the email" 
+                            className="min-h-[200px] font-mono"
+                            {...field} 
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          You can use HTML formatting for rich email content.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </TabsContent>
+              </Tabs>
+              
+              <CardFooter className="flex justify-between px-0 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleReset}
+                  disabled={!selectedTemplate?.id || resetTemplateMutation.isPending}
+                >
+                  {resetTemplateMutation.isPending ? (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                      Resetting...
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      Reset to Default
+                    </>
+                  )}
+                </Button>
+                
+                <Button 
+                  type="button"
+                  onClick={onSubmit}
+                  disabled={updateTemplateMutation.isPending}
+                >
+                  {updateTemplateMutation.isPending ? (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      Save Template
+                    </>
+                  )}
+                </Button>
+              </CardFooter>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Helper function to get template descriptions
+function getTemplateDescription(templateType: string): string {
+  switch (templateType) {
+    case 'passwordReset':
+      return 'Sent to users when they request a password reset.';
+    case 'roiAlert':
+      return 'Notification sent when a campaign ROI changes significantly.';
+    case 'campaignReminder':
+      return 'Reminds users to update their campaign performance data.';
+    case 'weeklyReport':
+      return 'Weekly summary of business performance and analytics.';
+    case 'verifyEmail':
+      return 'Sent to new users to verify their email address.';
+    case 'newAccountRequest':
+      return 'Notification to admins about new account approval requests.';
+    case 'accountApproved':
+      return 'Sent to users when their account has been approved.';
+    case 'accountRejected':
+      return 'Sent to users when their account has been rejected.';
+    default:
+      return 'System email template.';
+  }
+}

@@ -1,0 +1,50 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Ultra aggressive removal of AI/Lightning buttons */
+button[class*="fixed"][class*="bg-blue"][class*="rounded"],
+button.fixed.bg-blue-500:not(.marketing-advisor-button),
+button.fixed.bg-blue-600:not(.marketing-advisor-button),
+button[aria-label*="boost"],
+button[aria-label="Boost repl"],
+[data-boost-button],
+.fixed.bottom-16.right-4,
+.fixed[style*="bottom: 4rem"][style*="right: 1rem"],
+button.fixed[class*="bottom-"][class*="right-"],
+div[class*="fixed"][class*="bottom-"][class*="right-"]:not(.marketing-advisor-container),
+[class*="fixed"][class*="bg-blue"][class*="rounded-full"]:not(.marketing-advisor-button),
+button[class*="fixed"][class*="bottom-"][class*="right-"]:not(.marketing-advisor-button),
+[data-bot-button],
+[class*="ai-button"],
+[class*="assistant-button"],
+button[aria-label*="AI"],
+button[aria-label*="Assistant"],
+.ai-chat-button,
+.ai-helper-button {
+  display: none !important;
+  position: absolute !important;
+  z-index: -9999 !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transform: scale(0) !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  clip-path: inset(50%) !important;
+}
+
+/* Exception for Marketing Advisor button */
+button.marketing-advisor-button,
+.marketing-advisor-container {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  z-index: 10 !important;
+}

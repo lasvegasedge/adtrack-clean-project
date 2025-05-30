@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+  <title>AdTrack | AI-Powered Marketing Analytics</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
+  <style>
+    .gradient-text {
+      background-clip: text;
+      -webkit-background-clip: text;
+      color: transparent;
+      background-image: linear-gradient(to right, #3b82f6, #4f46e5);
+    }
+    .cta-gradient {
+      background-image: linear-gradient(to right, #3b82f6, #4f46e5);
+    }
+  </style>
+</head>
+<body class="bg-gray-50">
+  <header class="sticky top-0 z-50 bg-white border-b shadow-sm py-4">
+    <div class="container mx-auto px-4 md:px-6 flex items-center justify-between">
+      <div class="flex items-center">
+        <h1 class="text-xl md:text-2xl font-bold text-gray-900">
+          AdTrack <span class="text-blue-600 font-medium">| AI-Powered Solutions</span>
+        </h1>
+      </div>
+      <div class="flex items-center space-x-4">
+        <a href="/auth">
+          <button class="px-4 py-2 rounded-md bg-gray-100 hover:bg-gray-200 text-sm font-medium">
+            Log In
+          </button>
+        </a>
+        <a href="/auth">
+          <button class="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium">
+            Sign Up Free
+          </button>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="py-16 md:py-24 container mx-auto px-4 md:px-6">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+      <div class="flex flex-col space-y-6">
+        <h1 class="text-4xl md:text-5xl font-bold leading-tight text-gray-900">
+          Transform Your 
+          <span class="gradient-text"> Marketing Data </span> 
+          Into Actionable Insights
+        </h1>
+        <p class="text-xl text-gray-600">
+          AdTrack is the industry's first LLM specifically designed to track your ROI, compare your performance against local businesses, and optimize your advertising budget for maximum returns.
+        </p>
+        <div class="flex flex-col sm:flex-row gap-4 pt-4">
+          <a href="/auth">
+            <button class="px-6 py-3 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium">
+              Start 7-Day Free Trial
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="inline-block ml-2">
+                <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 1.9.6 2.7"></path>
+                <path d="M19 9v3h-3"></path>
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+              </svg>
+            </button>
+          </a>
+          <a href="/roi-calculator">
+            <button class="px-6 py-3 rounded-md border border-gray-300 hover:bg-gray-100 font-medium">
+              Try ROI Calculator
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="inline-block ml-2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="3" y1="9" x2="21" y2="9"></line>
+                <line x1="9" y1="21" x2="9" y2="9"></line>
+              </svg>
+            </button>
+          </a>
+        </div>
+        <div class="flex items-center pt-4">
+          <div class="flex -space-x-2 mr-3">
+            <div class="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-800 font-bold border-2 border-white">98%</div>
+            <div class="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center text-green-800 font-bold border-2 border-white">ROI</div>
+          </div>
+          <p class="text-sm text-gray-500">Average ROI improvement with our AI insights</p>
+        </div>
+      </div>
+      <div class="rounded-lg shadow-2xl bg-white p-6 border border-gray-200">
+        <div class="flex items-center space-x-4 mb-6">
+          <div class="h-12 w-12 rounded-lg bg-blue-100 flex items-center justify-center text-blue-800">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold">ROI Performance Tracker</h3>
+            <p class="text-sm text-gray-500">Real-time advertising performance</p>
+          </div>
+        </div>
+        <div class="space-y-4">
+          <div class="h-32 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600 opacity-50">
+              <path d="M12 20V10"></path>
+              <path d="M18 20V4"></path>
+              <path d="M6 20v-4"></path>
+            </svg>
+          </div>
+          <div class="grid grid-cols-3 gap-4">
+            <div class="bg-gray-50 p-3 rounded-lg text-center">
+              <p class="text-sm text-gray-500">ROI</p>
+              <p class="text-xl font-bold text-green-600">+82%</p>
+            </div>
+            <div class="bg-gray-50 p-3 rounded-lg text-center">
+              <p class="text-sm text-gray-500">Spend</p>
+              <p class="text-xl font-bold text-gray-900">$5.2k</p>
+            </div>
+            <div class="bg-gray-50 p-3 rounded-lg text-center">
+              <p class="text-sm text-gray-500">Return</p>
+              <p class="text-xl font-bold text-gray-900">$9.5k</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Key Benefits -->
+  <section class="py-16 bg-white">
+    <div class="container mx-auto px-4 md:px-6">
+      <div class="text-center mb-12">
+        <h2 class="text-3xl font-bold text-gray-900">How AdTrack Transforms Your Marketing</h2>
+        <p class="mt-4 text-xl text-gray-600 max-w-3xl mx-auto">
+          Our AI-powered platform delivers clear insights and predictive analytics for better marketing decisions
+        </p>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <div class="bg-gray-50 p-6 rounded-lg border border-gray-100">
+          <div class="h-12 w-12 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <circle cx="12" cy="12" r="6"></circle>
+              <circle cx="12" cy="12" r="2"></circle>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Track Performance</h3>
+          <p class="text-gray-600">
+            Easily log all your advertising methods, spending, and timelines. Our system automatically calculates ROI percentages.
+          </p>
+        </div>
+        <div class="bg-gray-50 p-6 rounded-lg border border-gray-100">
+          <div class="h-12 w-12 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M2 12h20"></path>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Local Comparisons</h3>
+          <p class="text-gray-600">
+            See how your advertising performs against similar businesses within your area with our geographic comparison tools.
+          </p>
+        </div>
+        <div class="bg-gray-50 p-6 rounded-lg border border-gray-100">
+          <div class="h-12 w-12 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+              <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">AI Recommendations</h3>
+          <p class="text-gray-600">
+            Get intelligent suggestions for budget allocation and campaign optimization based on historical data and predictive analytics.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="py-16 cta-gradient text-white">
+    <div class="container mx-auto px-4 md:px-6 text-center">
+      <h2 class="text-3xl font-bold mb-6">Ready to Transform Your Marketing ROI?</h2>
+      <p class="text-xl opacity-90 max-w-3xl mx-auto mb-8">
+        Join thousands of businesses using AdTrack's AI-powered solutions to optimize their advertising spend and maximize returns.
+      </p>
+      <div class="flex flex-col sm:flex-row gap-4 justify-center">
+        <a href="/auth">
+          <button class="px-6 py-3 rounded-md bg-white text-blue-700 hover:bg-gray-100 font-medium">
+            Start Your Free Trial
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="inline-block ml-2">
+              <line x1="7" y1="17" x2="17" y2="7"></line>
+              <polyline points="7 7 17 7 17 17"></polyline>
+            </svg>
+          </button>
+        </a>
+        <a href="/about">
+          <button class="px-6 py-3 rounded-md border border-white text-white hover:bg-blue-700 font-medium">
+            Learn More About AdTrack
+          </button>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="bg-gray-900 text-gray-300 py-12">
+    <div class="container mx-auto px-4 md:px-6">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
+        <div>
+          <h3 class="text-white font-semibold text-lg mb-4">AdTrack</h3>
+          <p class="text-sm max-w-xs">
+            The industry's first AI-powered marketing analytics platform designed to maximize your advertising ROI.
+          </p>
+        </div>
+        <div>
+          <h4 class="text-white font-medium mb-4">Features</h4>
+          <ul class="space-y-2 text-sm">
+            <li>
+              <a href="/features/roi-tracking" class="hover:text-white transition-colors">
+                ROI Tracking
+              </a>
+            </li>
+            <li>
+              <a href="/features/competitor-analysis" class="hover:text-white transition-colors">
+                Competitor Analysis
+              </a>
+            </li>
+            <li>
+              <a href="/features/ai-recommendations" class="hover:text-white transition-colors">
+                AI Recommendations
+              </a>
+            </li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="text-white font-medium mb-4">Resources</h4>
+          <ul class="space-y-2 text-sm">
+            <li>
+              <a href="/about" class="hover:text-white transition-colors">
+                About Us
+              </a>
+            </li>
+            <li>
+              <a href="/pricing" class="hover:text-white transition-colors">
+                Pricing
+              </a>
+            </li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="text-white font-medium mb-4">Contact</h4>
+          <ul class="space-y-2 text-sm">
+            <li>info@adtrack.com</li>
+            <li>(800) 123-4567</li>
+            <li>123 Marketing Ave, Suite 101<br />San Francisco, CA 94103</li>
+          </ul>
+        </div>
+      </div>
+      <div class="border-t border-gray-800 mt-8 pt-8 flex flex-col md:flex-row justify-between items-center">
+        <p class="text-sm">
+          &copy; 2025 AdTrack | <span class="text-blue-400 font-medium">AI-Powered Solutions</span>. All rights reserved.
+        </p>
+        <div class="mt-4 md:mt-0">
+          <ul class="flex space-x-4 text-sm">
+            <li>
+              <a href="#" class="hover:text-white transition-colors">
+                Privacy Policy
+              </a>
+            </li>
+            <li>
+              <a href="#" class="hover:text-white transition-colors">
+                Terms of Service
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,157 @@
+import express, { type Request, Response, NextFunction } from "express";
+import { registerRoutes } from "./routes";
+import { setupVite, serveStatic, log } from "./vite";
+import { initializeAnthropicClient } from "./marketingInsights";
+import { migrateDiscountCodes } from "./migrate-discount-codes";
+import { migrateLocations } from "./migrate-locations";
+import { migrateSubscriptions } from "./migrate-subscriptions";
+import { setupDemoData } from "./demo-data-setup";
+import path from "path";
+
+const app = express();
+
+// Special endpoint-specific middleware
+// The webhook route needs the raw body to verify the signature
+app.use('/api/stripe-webhook', express.raw({ type: 'application/json' }));
+
+// Standard middleware for all other routes
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+// Add cache control headers to prevent caching during development
+app.use((req, res, next) => {
+  // Prevent caching for HTML responses and root path
+  if (!req.path.match(/\.(css|js|png|jpg|jpeg|gif|ico|svg)$/i) || req.path === '/') {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
+  }
+  next();
+});
+
+// Serve the static HTML minisite
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+app.use(express.static(path.join(__dirname, "../public")));
+
+// Move the client route handling to after API routes are registered
+// This will be added after we set up the API routes
+
+// The minisite routes are now handled by the combined route handler above
+
+app.use((req, res, next) => {
+  const start = Date.now();
+  const path = req.path;
+  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+
+  const originalResJson = res.json;
+  res.json = function (bodyJson, ...args) {
+    capturedJsonResponse = bodyJson;
+    return originalResJson.apply(res, [bodyJson, ...args]);
+  };
+
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    if (path.startsWith("/api")) {
+      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      if (capturedJsonResponse) {
+        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      }
+
+      if (logLine.length > 80) {
+        logLine = logLine.slice(0, 79) + "…";
+      }
+
+      log(logLine);
+    }
+  });
+
+  next();
+});
+
+(async () => {
+  // Initialize Anthropic client if key is available
+  if (process.env.ANTHROPIC_API_KEY) {
+    const initialized = initializeAnthropicClient();
+    if (initialized) {
+      console.log("Anthropic API key successfully configured");
+    } else {
+      console.warn("Failed to initialize Anthropic client");
+    }
+  } else {
+    console.warn("ANTHROPIC_API_KEY not provided. Marketing insights will use fallback responses.");
+  }
+  
+  const server = await registerRoutes(app);
+
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    const status = err.status || err.statusCode || 500;
+    const message = err.message || "Internal Server Error";
+
+    res.status(status).json({ message });
+    throw err;
+  });
+
+  // importantly only setup vite in development and after
+  // setting up all the other routes so the catch-all route
+  // doesn't interfere with the other routes
+  if (app.get("env") === "development") {
+    await setupVite(app, server);
+  } else {
+    serveStatic(app);
+  }
+  
+  // Add a catch-all route for client-side routing AFTER API routes
+  // This handles direct URL access for all client routes
+  // Application routing middleware
+  app.use((req, res, next) => {
+    next();
+  });
+
+  app.get('*', (req, res) => {
+    // Skip API requests and static files
+    if (req.path.startsWith('/api/') || req.path.match(/\.(js|css|png|jpg|jpeg|gif|ico|svg)$/i)) {
+      return res.status(404).send('Not found');
+    }
+    
+    // For all other routes, serve the main HTML file for client-side routing
+    res.sendFile(path.join(__dirname, '../client/index.html'));
+  });
+  
+  // The main catch-all route is defined above, no need for a second one here
+
+  // ALWAYS serve the app on port 5000
+  // this serves both the API and the client.
+  // It is the only port that is not firewalled.
+  const port = 5000;
+  server.listen({
+    port,
+    host: "0.0.0.0",
+    reusePort: true,
+  }, async () => {
+    log(`serving on port ${port}`);
+    
+    // Run database migrations after server starts
+    try {
+      await migrateDiscountCodes();
+      log('Discount codes migration completed');
+      
+      await migrateLocations();
+      log('Locations migration completed');
+      
+      await migrateSubscriptions();
+      log('Subscription system migration completed');
+      
+      // Setup demo data for demo user
+      await setupDemoData();
+      log('Demo data setup completed');
+    } catch (error) {
+      console.error('Failed to run migrations or setup:', error);
+    }
+  });
+})();

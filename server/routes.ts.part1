@@ -1,0 +1,107 @@
+import type { Express, Request, Response } from "express";
+import { createServer, type Server } from "http";
+import { storage } from "./storage";
+import { hashPassword, comparePasswords, hasAdminRights } from "./auth";
+import { sendEmail, emailTemplates } from "./email";
+import { generateMarketingAdvice } from "./chatbot";
+import { createPaymentIntent, getPaymentIntent } from "./stripe";
+import * as stripeModule from "./stripe";
+import { addPaymentMethod, checkPaymentMethod, removePaymentMethod } from "./payment-methods";
+import { generateMarketingInsights, initializeAnthropicClient, getFallbackInsights } from "./marketingInsights";
+import { generatePricingRecommendations } from "./pricingRecommendationEngine";
+import * as discountCodeStorage from "./discount-storage";
+import locationRouter from "./routes/location-routes";
+import emailTemplateRouter from "./routes/email-template-routes";
+import { apiRouter } from "./routes/index";
+import { generateBenchmarkInsights } from "./services/ai-tooltip-service";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { 
+  insertUserSchema, 
+  insertBusinessSchema, 
+  insertAdMethodSchema, 
+  insertBusinessTypeSchema, 
+  insertCampaignSchema, 
+  insertNotificationSettingsSchema,
+  insertAchievementTypeSchema,
+  UserRole,
+  UserApprovalStatus,
+  insertUserAchievementSchema,
+  insertPricingConfigSchema,
+  insertAdminNotificationSettingsSchema,
+  insertDiscountCodeSchema,
+  loginSchema, 
+  signupSchema,
+  InsertUser,
+  Campaign,
+  Business,
+  AdMethod,
+  adRecommendations,
+  adRecommendationItems,
+  userRecommendationInteractions,
+  emailTemplateTypes,
+  pricingConfig,
+  discountCodes,
+  type EmailTemplateType,
+  type InsertAdminNotificationSettings,
+  type InsertDiscountCode
+} from "@shared/schema";
+import { db } from "./db";
+import { eq, asc, desc } from "drizzle-orm";
+
+// Set up multer for file upload
+const uploadDir = path.resolve(process.cwd(), "uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const fileStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
+  }
+});
+
+const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  const allowedTypes = ['.jpg', '.jpeg', '.png', '.pdf'];
+  const ext = path.extname(file.originalname).toLowerCase();
+  
+  if (allowedTypes.includes(ext)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only JPG, PNG, and PDF files are allowed'));
+  }
+};
+
+const upload = multer({ 
+  storage: fileStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter
+});
+
+import { setupAuth } from './auth';
+
+export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup authentication with Passport first
+  setupAuth(app);
+  
+  // Redirect from root based on authentication
+  app.get('/', (req, res) => {
+    if (req.isAuthenticated()) {
+      // If authenticated, go to dashboard
+      res.redirect('/dashboard');
+    } else {
+      // If not authenticated, show landing page
+      res.redirect('/');
+    }
+  });
+  
+  // Serve the minisite HTML file directly at /minisite route
+  app.get('/minisite', (req, res) => {
+    res.sendFile(path.resolve(process.cwd(), 'client/minisite.html'));
+  });

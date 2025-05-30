@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+  <title>AdTrack | AI-Powered Marketing Analytics</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .gradient-text {
+      background-clip: text;
+      -webkit-background-clip: text;
+      color: transparent;
+      background-image: linear-gradient(to right, #3b82f6, #4f46e5);
+    }
+    .cta-gradient {
+      background-image: linear-gradient(to right, #3b82f6, #4f46e5);
+    }
+  </style>
+</head>
+<body class="bg-gray-50">
+  <header class="sticky top-0 z-50 bg-white border-b shadow-sm py-4">
+    <div class="container mx-auto px-4 md:px-6 flex items-center justify-between">
+      <div class="flex items-center">
+        <h1 class="text-xl md:text-2xl font-bold text-gray-900">
+          AdTrack <span class="text-blue-600 font-medium">| AI-Powered Solutions</span>
+        </h1>
+      </div>
+      <div class="flex items-center space-x-4">
+        <a href="/auth" class="bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-2 px-4 rounded text-sm">
+          Log In
+        </a>
+        <a href="/auth" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded text-sm">
+          Sign Up Free
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="py-16 md:py-24 container mx-auto px-4 md:px-6">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+      <div class="flex flex-col space-y-6">
+        <h1 class="text-4xl md:text-5xl font-bold leading-tight text-gray-900">
+          Transform Your 
+          <span class="gradient-text"> Marketing Data </span> 
+          Into Actionable Insights
+        </h1>
+        <p class="text-xl text-gray-600">
+          AdTrack is the industry's first LLM specifically designed to track your ROI, compare your performance against local businesses, and optimize your advertising budget for maximum returns.
+        </p>
+        <div class="flex flex-col sm:flex-row gap-4 pt-4">
+          <a href="/auth" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded inline-flex items-center">
+            Start 7-Day Free Trial
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-2">
+              <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path>
+              <path d="M9 18h6"></path>
+              <path d="M10 22h4"></path>
+            </svg>
+          </a>
+          <a href="/roi-calculator" class="border border-gray-300 hover:bg-gray-50 text-gray-700 font-bold py-3 px-6 rounded inline-flex items-center">
+            Try ROI Calculator
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-2">
+              <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+              <path d="M3 9h18"></path>
+              <path d="M9 21V9"></path>
+            </svg>
+          </a>
+        </div>
+        <div class="pt-4">
+          <p class="text-sm text-gray-500">Improve your average ROI with our proprietary AI insights</p>
+        </div>
+      </div>
+      <div class="rounded-lg shadow-2xl bg-white p-6 border border-gray-200">
+        <div class="flex items-center space-x-4 mb-6">
+          <div class="h-12 w-12 rounded-lg bg-blue-100 flex items-center justify-center text-blue-800">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6">
+              <path d="M3 3v18h18"></path>
+              <path d="m19 9-5 5-4-4-3 3"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold">ROI Performance Tracker</h3>
+            <p class="text-sm text-gray-500">Real-time advertising performance</p>
+          </div>
+        </div>
+        <div class="space-y-4">
+          <div class="h-32 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-16 w-16 text-blue-600 opacity-50">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+            </svg>
+          </div>
+          <div class="grid grid-cols-3 gap-4">
+            <div class="bg-gray-50 p-3 rounded-lg text-center">
+              <p class="text-sm text-gray-500">ROI</p>
+              <p class="text-xl font-bold text-green-600">+82%</p>
+            </div>
+            <div class="bg-gray-50 p-3 rounded-lg text-center">
+              <p class="text-sm text-gray-500">Spend</p>
+              <p class="text-xl font-bold text-gray-900">$5.2k</p>
+            </div>
+            <div class="bg-gray-50 p-3 rounded-lg text-center">
+              <p class="text-sm text-gray-500">Return</p>
+              <p class="text-xl font-bold text-gray-900">$9.5k</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How AdTrack Transforms Your Marketing Section -->
+  <section class="py-16 bg-white">
+    <div class="container mx-auto px-4 md:px-6">
+      <div class="text-center mb-12">
+        <h2 class="text-3xl font-bold text-gray-900">How AdTrack Transforms Your Marketing</h2>
+        <p class="mt-4 text-xl text-gray-600 max-w-3xl mx-auto">
+          Our AI-powered platform delivers clear insights and predictive analytics for better marketing decisions
+        </p>
+      </div>
+      
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
+        <!-- Card 1 -->
+        <div class="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+          <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <circle cx="12" cy="12" r="6"></circle>
+              <circle cx="12" cy="12" r="2"></circle>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Track Performance</h3>
+          <p class="text-gray-600">
+            Easily log all your advertising methods, spending, and timelines. Our system automatically calculates ROI percentages.
+          </p>
+        </div>
+        
+        <!-- Card 2 -->
+        <div class="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+          <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M2 12h20"></path>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Local Comparisons</h3>
+          <p class="text-gray-600">
+            See how your advertising performs against similar businesses within your area with our geographic comparison tools.
+          </p>
+        </div>
+        
+        <!-- Card 3 -->
+        <div class="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+          <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.96-4.03A2.5 2.5 0 0 1 9.5 2Z"></path>
+              <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.96-4.03A2.5 2.5 0 0 0 14.5 2Z"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">AI Recommendations</h3>
+          <p class="text-gray-600">
+            Get intelligent suggestions for budget allocation and campaign optimization based on historical data and predictive analytics.
+          </p>
+        </div>
+        
+        <!-- Card 4 -->
+        <div class="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+          <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 21H4a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h5l2 3h9a2 2 0 0 1 2 2v2M21.12 15.88a3 3 0 1 0-4.24 4.24 3 3 0 0 0 4.24-4.24ZM16.88 11.12a3 3 0 1 0 4.24-4.24 3 3 0 0 0-4.24 4.24Z"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Visual Analytics</h3>
+          <p class="text-gray-600">
+            Interactive charts and dashboards that break down your marketing performance by method, time period, and budget allocation.
+          </p>
+        </div>
+        
+        <!-- Card 5 -->
+        <div class="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+          <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="8" r="6"></circle>
+              <path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Top Performers</h3>
+          <p class="text-gray-600">
+            Identify the most successful advertising methods and campaigns in your area to model your own strategies after.
+          </p>
+        </div>
+        
+        <!-- Card 6 -->
+        <div class="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+          <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Insights Storytelling</h3>
+          <p class="text-gray-600">
+            Our One-Click Marketing Insights transforms complex analytics into easy-to-understand narratives for better decision making.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Testimonials Section -->
+  <section class="py-16 bg-gray-50">
+    <div class="container mx-auto px-4 md:px-6">
+      <div class="text-center mb-12">
+        <h2 class="text-3xl font-bold text-gray-900">What Our Customers Say</h2>
+        <p class="mt-4 text-xl text-gray-600 max-w-3xl mx-auto">
+          Real results from real businesses using AdTrack's AI-powered solutions
+        </p>
+      </div>
+      
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
+        <!-- Testimonial 1 -->
+        <div class="bg-white p-6 rounded-lg shadow-md border border-gray-100">
+          <div class="flex items-center mb-4">
+            <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-800 font-bold">
+              JD
+            </div>
+            <div class="ml-4">
+              <h4 class="font-semibold">Jessica Davis</h4>
+              <p class="text-sm text-gray-500">Marketing Director, Riverside Cafe</p>
+            </div>
+          </div>
+          <div class="mb-4">
+            <div class="flex text-yellow-400 mb-2">
+              <span>★</span><span>★</span><span>★</span><span>★</span><span>★</span>
+            </div>
+            <p class="text-gray-700">
+              "AdTrack has transformed how we approach local advertising. The ROI tracking helped us identify which channels were working and which weren't."
+            </p>
+          </div>
+          <div class="text-sm text-gray-500 flex items-center">
+            <span class="font-medium text-green-600">+43% ROI</span>
+            <span class="mx-2">•</span>
+            <span>Restaurant</span>
+          </div>
+        </div>
+        
+        <!-- Testimonial 2 -->
+        <div class="bg-white p-6 rounded-lg shadow-md border border-gray-100">
+          <div class="flex items-center mb-4">
+            <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-800 font-bold">
+              MJ
+            </div>
+            <div class="ml-4">
+              <h4 class="font-semibold">Michael Johnson</h4>
+              <p class="text-sm text-gray-500">Owner, Eastside Hardware</p>
+            </div>
+          </div>
+          <div class="mb-4">
+            <div class="flex text-yellow-400 mb-2">
+              <span>★</span><span>★</span><span>★</span><span>★</span><span>★</span>
+            </div>
+            <p class="text-gray-700">
+              "As a small business, every dollar counts. AdTrack helped us identify which local advertising channels were working and which weren't. We've doubled our new customer acquisition."
+            </p>
+          </div>
+          <div class="text-sm text-gray-500 flex items-center">
+            <span class="font-medium text-green-600">2x New Customers</span>
+            <span class="mx-2">•</span>
+            <span>Local Advertising</span>
+          </div>
+        </div>
+        
+        <!-- Testimonial 3 -->
+        <div class="bg-white p-6 rounded-lg shadow-md border border-gray-100">
+          <div class="flex items-center mb-4">
+            <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-800 font-bold">
+              SL
+            </div>
+            <div class="ml-4">
+              <h4 class="font-semibold">Sarah Lewis</h4>
+              <p class="text-sm text-gray-500">CMO, GreenTech Solutions</p>
+            </div>
+          </div>
+          <div class="mb-4">
+            <div class="flex text-yellow-400 mb-2">
+              <span>★</span><span>★</span><span>★</span><span>★</span><span>★</span>
+            </div>
+            <p class="text-gray-700">
+              "The competitor analysis feature is a game-changer. We discovered untapped marketing channels our competitors were using successfully and adapted our strategy accordingly."
+            </p>
+          </div>
+          <div class="text-sm text-gray-500 flex items-center">
+            <span class="font-medium text-green-600">+41% Market Share</span>
+            <span class="mx-2">•</span>
+            <span>Competitor Analysis</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing Section -->
+  <section id="pricing" class="py-16 bg-white">
+    <div class="container mx-auto px-4 md:px-6">
+      <div class="text-center mb-12">
+        <h2 class="text-3xl font-bold text-gray-900">Simple, Transparent Pricing</h2>
+        <p class="mt-4 text-xl text-gray-600 max-w-3xl mx-auto">
+          Start with our 7-day free trial, then choose the plan that works best for your business
+        </p>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+        <div class="border border-gray-200 rounded-lg p-6 bg-white">
+          <div class="text-center mb-4">
+            <h3 class="text-lg font-semibold">Basic Plan</h3>
+            <div class="mt-2">
+              <span class="text-3xl font-bold">$378.95</span>
+              <span class="text-gray-500">/month</span>
+            </div>
+          </div>
+          <ul class="space-y-3 mb-6">
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>Up to 5 active campaigns</span>
+            </li>
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>Basic ROI tracking</span>
+            </li>
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>Local competitor insights</span>
+            </li>
+          </ul>
+          <a href="/auth" class="block w-full py-2 px-4 bg-white border border-gray-300 hover:bg-gray-50 text-center font-medium rounded-lg">
+            Start Free Trial
+          </a>
+        </div>
+        <div class="border-2 border-blue-600 rounded-lg p-6 bg-white shadow-lg relative">
+          <div class="absolute top-0 right-0 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-bl-lg rounded-tr-lg">
+            POPULAR
+          </div>
+          <div class="text-center mb-4">
+            <h3 class="text-lg font-semibold">Professional Plan</h3>
+            <div class="mt-2">
+              <span class="text-3xl font-bold">$678.95</span>
+              <span class="text-gray-500">/month</span>
+            </div>
+          </div>
+          <ul class="space-y-3 mb-6">
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>Up to 20 active campaigns</span>
+            </li>
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>Advanced analytics dashboard</span>
+            </li>
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>AI-powered recommendations</span>
+            </li>
+          </ul>
+          <a href="/auth" class="block w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white text-center font-medium rounded-lg">
+            Start Free Trial
+          </a>
+        </div>
+        <div class="border border-gray-200 rounded-lg p-6 bg-white">
+          <div class="text-center mb-4">
+            <h3 class="text-lg font-semibold">Premium Plan</h3>
+            <div class="mt-2">
+              <span class="text-3xl font-bold">$978.95</span>
+              <span class="text-gray-500">/month</span>
+            </div>
+          </div>
+          <ul class="space-y-3 mb-6">
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>Unlimited campaigns</span>
+            </li>
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>All Professional features</span>
+            </li>
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>Custom ROI reporting</span>
+            </li>
+          </ul>
+          <a href="/auth" class="block w-full py-2 px-4 bg-white border border-gray-300 hover:bg-gray-50 text-center font-medium rounded-lg">
+            Start Free Trial
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Section -->
+  <section class="py-16 bg-blue-600 text-white">
+    <div class="container mx-auto px-4 md:px-6 text-center">
+      <h2 class="text-3xl font-bold mb-6">Ready to Transform Your Marketing ROI?</h2>
+      <p class="text-xl mb-8 max-w-3xl mx-auto">
+        Join thousands of businesses using AdTrack's AI-powered solutions to optimize their advertising spend and maximize returns.
+      </p>
+      <div class="flex flex-col sm:flex-row gap-4 justify-center">
+        <a href="/auth" class="bg-white text-blue-600 hover:bg-blue-50 font-bold py-3 px-6 rounded inline-flex items-center">
+          Start Your Free Trial
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-2">
+            <path d="M5 12h14"></path>
+            <path d="m12 5 7 7-7 7"></path>
+          </svg>
+        </a>
+        <a href="/about" class="border border-white text-white hover:bg-blue-700 font-bold py-3 px-6 rounded">
+          Learn More About AdTrack
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="bg-gray-900 text-gray-300 py-12">
+    <div class="container mx-auto px-4 md:px-6">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
+        <div>
+          <h3 class="text-white font-semibold text-lg mb-4">AdTrack</h3>
+          <p class="text-sm max-w-xs">
+            The industry's first AI-powered marketing analytics platform designed to maximize your advertising ROI.
+          </p>
+        </div>
+        <div>
+          <h4 class="text-white font-medium mb-4">Features</h4>
+          <ul class="space-y-2 text-sm">
+            <li><a href="#" class="hover:text-white">ROI Tracking</a></li>
+            <li><a href="#" class="hover:text-white">Competitor Analysis</a></li>
+            <li><a href="#" class="hover:text-white">AI Recommendations</a></li>
+            <li><a href="#" class="hover:text-white">Marketing Insights</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="text-white font-medium mb-4">Resources</h4>
+          <ul class="space-y-2 text-sm">
+            <li><a href="/blog" class="hover:text-white">Blog</a></li>
+            <li><a href="/case-studies" class="hover:text-white">Case Studies</a></li>
+            <li><a href="/roi-calculator" class="hover:text-white">ROI Calculator</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="text-white font-medium mb-4">Company</h4>
+          <ul class="space-y-2 text-sm">
+            <li><a href="/about" class="hover:text-white">About Us</a></li>
+            <li><a href="/privacy-policy" class="hover:text-white">Privacy Policy</a></li>
+            <li><a href="/terms-of-service" class="hover:text-white">Terms of Service</a></li>
+            <li><a href="/contact" class="hover:text-white">Contact</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="border-t border-gray-700 mt-8 pt-8 flex flex-col md:flex-row justify-between items-center">
+        <p class="text-sm">
+          &copy; 2025 AdTrack | <span class="text-blue-400 font-medium">AI-Powered Solutions</span>. All rights reserved.
+        </p>
+        <div class="mt-4 md:mt-0">
+          <ul class="flex space-x-4 text-sm">
+            <li>
+              <a href="/privacy-policy" class="hover:text-white transition-colors">
+                Privacy Policy
+              </a>
+            </li>
+            <li>
+              <a href="/terms-of-service" class="hover:text-white transition-colors">
+                Terms of Service
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

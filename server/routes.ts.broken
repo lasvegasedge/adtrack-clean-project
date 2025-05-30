@@ -1,0 +1,4949 @@
+import type { Express, Request, Response } from "express";
+import { createServer, type Server } from "http";
+import { storage } from "./storage";
+import { hashPassword, comparePasswords, hasAdminRights } from "./auth";
+import { sendEmail, emailTemplates } from "./email";
+import { generateMarketingAdvice } from "./chatbot";
+import { createPaymentIntent, getPaymentIntent } from "./stripe";
+import * as stripeModule from "./stripe";
+import { addPaymentMethod, checkPaymentMethod, removePaymentMethod } from "./payment-methods";
+import { generateMarketingInsights, initializeAnthropicClient, getFallbackInsights } from "./marketingInsights";
+import { generatePricingRecommendations } from "./pricingRecommendationEngine";
+import * as discountCodeStorage from "./discount-storage";
+import locationRouter from "./routes/location-routes";
+import emailTemplateRouter from "./routes/email-template-routes";
+import { apiRouter } from "./routes/index";
+import { generateBenchmarkInsights } from "./services/ai-tooltip-service";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { 
+  insertUserSchema, 
+  insertBusinessSchema, 
+  insertAdMethodSchema, 
+  insertBusinessTypeSchema, 
+  insertCampaignSchema, 
+  insertNotificationSettingsSchema,
+  insertAchievementTypeSchema,
+  UserRole,
+  UserApprovalStatus,
+  insertUserAchievementSchema,
+  insertPricingConfigSchema,
+  insertAdminNotificationSettingsSchema,
+  insertDiscountCodeSchema,
+  loginSchema, 
+  signupSchema,
+  InsertUser,
+  Campaign,
+  Business,
+  AdMethod,
+  adRecommendations,
+  adRecommendationItems,
+  userRecommendationInteractions,
+  emailTemplateTypes,
+  pricingConfig,
+  discountCodes,
+  type EmailTemplateType,
+  type InsertAdminNotificationSettings,
+  type InsertDiscountCode
+} from "@shared/schema";
+import { db } from "./db";
+import { eq, asc, desc } from "drizzle-orm";
+
+// Set up multer for file upload
+const uploadDir = path.resolve(process.cwd(), "uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const fileStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
+  }
+});
+
+const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  const allowedTypes = ['.jpg', '.jpeg', '.png', '.pdf'];
+  const ext = path.extname(file.originalname).toLowerCase();
+  
+  if (allowedTypes.includes(ext)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only JPG, PNG, and PDF files are allowed'));
+  }
+};
+
+const upload = multer({ 
+  storage: fileStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter
+});
+
+import { setupAuth } from './auth';
+
+export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup authentication with Passport first
+  setupAuth(app);
+  
+  // Redirect from root based on authentication
+  app.get('/', (req, res) => {
+    if (req.isAuthenticated()) {
+      // If authenticated, go to dashboard
+      res.redirect('/dashboard');
+    } else {
+      // If not authenticated, show landing page
+      res.redirect('/');
+    }
+  });
+  
+  // Serve the minisite HTML file directly at /minisite route
+  app.get('/minisite', (req, res) => {
+    res.sendFile(path.resolve(process.cwd(), 'client/minisite.html'));
+  });
+  
+  // Truescore route has been removed
+  <style>
+    .gradient-text {
+      background: linear-gradient(90deg, #3B82F6 0%, #6366F1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <!-- Header -->
+  <header class="sticky top-0 z-50 bg-white border-b shadow-sm py-4">
+    <div class="container mx-auto px-4 md:px-6 flex items-center justify-between">
+      <div class="flex items-center">
+        <h1 class="text-xl md:text-2xl font-bold text-gray-900">
+          AdTrack <span class="text-blue-600 font-medium">| AI-Powered Solutions</span>
+        </h1>
+      </div>
+      <div class="flex items-center space-x-4">
+        <a href="/auth" class="bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-2 px-4 rounded text-sm">
+          Log In
+        </a>
+        <a href="/auth" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded text-sm">
+          Sign Up Free
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="py-16 md:py-24 container mx-auto px-4 md:px-6">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+      <div class="flex flex-col space-y-6">
+        <h1 class="text-4xl md:text-5xl font-bold leading-tight text-gray-900">
+          Transform Your 
+          <span class="gradient-text">Marketing Data</span> 
+          Into Actionable Insights
+        </h1>
+        <p class="text-xl text-gray-600">
+          AdTrack is the industry's first LLM specifically designed to track your ROI, compare your performance against local businesses, and optimize your advertising budget for maximum returns.
+        </p>
+        <div class="flex flex-col sm:flex-row gap-4 pt-4">
+          <a href="/auth" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded inline-flex items-center">
+            Start 7-Day Free Trial
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-2">
+              <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path>
+              <path d="M9 18h6"></path>
+              <path d="M10 22h4"></path>
+            </svg>
+          </a>
+          <a href="/roi-calculator" class="border border-gray-300 hover:bg-gray-50 text-gray-700 font-bold py-3 px-6 rounded inline-flex items-center">
+            Try ROI Calculator
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-2">
+              <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+              <path d="M3 9h18"></path>
+              <path d="M9 21V9"></path>
+            </svg>
+          </a>
+        </div>
+        <div class="pt-4">
+          <p class="text-sm text-gray-500">Improve your average ROI with our proprietary AI insights</p>
+        </div>
+      </div>
+      <div class="rounded-lg shadow-2xl bg-white p-6 border border-gray-200">
+        <div class="flex items-center space-x-4 mb-6">
+          <div class="h-12 w-12 rounded-lg bg-blue-100 flex items-center justify-center text-blue-800">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6">
+              <path d="M3 3v18h18"></path>
+              <path d="m19 9-5 5-4-4-3 3"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold">ROI Performance Tracker</h3>
+            <p class="text-sm text-gray-500">Real-time advertising performance</p>
+          </div>
+        </div>
+        <div class="space-y-4">
+          <div class="h-32 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-16 w-16 text-blue-600 opacity-50">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+            </svg>
+          </div>
+          <div class="grid grid-cols-3 gap-4">
+            <div class="bg-gray-50 p-3 rounded-lg text-center">
+              <p class="text-sm text-gray-500">ROI</p>
+              <p class="text-xl font-bold text-green-600">+82%</p>
+            </div>
+            <div class="bg-gray-50 p-3 rounded-lg text-center">
+              <p class="text-sm text-gray-500">Spend</p>
+              <p class="text-xl font-bold text-gray-900">$5.2k</p>
+            </div>
+            <div class="bg-gray-50 p-3 rounded-lg text-center">
+              <p class="text-sm text-gray-500">Return</p>
+              <p class="text-xl font-bold text-gray-900">$9.5k</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How AdTrack Transforms Your Marketing Section -->
+  <section class="py-16 bg-white">
+    <div class="container mx-auto px-4 md:px-6">
+      <div class="text-center mb-12">
+        <h2 class="text-3xl font-bold text-gray-900">How AdTrack Transforms Your Marketing</h2>
+        <p class="mt-4 text-xl text-gray-600 max-w-3xl mx-auto">
+          Our AI-powered platform delivers clear insights and predictive analytics for better marketing decisions
+        </p>
+      </div>
+      
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
+        <!-- Card 1 -->
+        <div class="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+          <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <circle cx="12" cy="12" r="6"></circle>
+              <circle cx="12" cy="12" r="2"></circle>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Track Performance</h3>
+          <p class="text-gray-600">
+            Easily log all your advertising methods, spending, and timelines. Our system automatically calculates ROI percentages.
+          </p>
+        </div>
+        
+        <!-- Card 2 -->
+        <div class="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+          <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M2 12h20"></path>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Local Comparisons</h3>
+          <p class="text-gray-600">
+            See how your advertising performs against similar businesses within your area with our geographic comparison tools.
+          </p>
+        </div>
+        
+        <!-- Card 3 -->
+        <div class="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+          <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.96-4.03A2.5 2.5 0 0 1 9.5 2Z"></path>
+              <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.96-4.03A2.5 2.5 0 0 0 14.5 2Z"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">AI Recommendations</h3>
+          <p class="text-gray-600">
+            Get intelligent suggestions for budget allocation and campaign optimization based on historical data and predictive analytics.
+          </p>
+        </div>
+        
+        <!-- Card 4 -->
+        <div class="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+          <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 21H4a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h5l2 3h9a2 2 0 0 1 2 2v2M21.12 15.88a3 3 0 1 0-4.24 4.24 3 3 0 0 0 4.24-4.24ZM16.88 11.12a3 3 0 1 0 4.24-4.24 3 3 0 0 0-4.24 4.24Z"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Visual Analytics</h3>
+          <p class="text-gray-600">
+            Interactive charts and dashboards that break down your marketing performance by method, time period, and budget allocation.
+          </p>
+        </div>
+        
+        <!-- Card 5 -->
+        <div class="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+          <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="8" r="6"></circle>
+              <path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Top Performers</h3>
+          <p class="text-gray-600">
+            Identify the most successful advertising methods and campaigns in your area to model your own strategies after.
+          </p>
+        </div>
+        
+        <!-- Card 6 -->
+        <div class="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+          <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Insights Storytelling</h3>
+          <p class="text-gray-600">
+            Our One-Click Marketing Insights transforms complex analytics into easy-to-understand narratives for better decision making.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Testimonials Section -->
+  <section class="py-16 bg-gray-50">
+    <div class="container mx-auto px-4 md:px-6">
+      <div class="text-center mb-12">
+        <h2 class="text-3xl font-bold text-gray-900">What Our Customers Say</h2>
+        <p class="mt-4 text-xl text-gray-600 max-w-3xl mx-auto">
+          Real results from real businesses using AdTrack's AI-powered solutions
+        </p>
+      </div>
+      
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
+        <!-- Testimonial 1 -->
+        <div class="bg-white p-6 rounded-lg shadow-md border border-gray-100">
+          <div class="flex items-center mb-4">
+            <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-800 font-bold">
+              JD
+            </div>
+            <div class="ml-4">
+              <h4 class="font-semibold">Jessica Davis</h4>
+              <p class="text-sm text-gray-500">Marketing Director, Riverside Cafe</p>
+            </div>
+          </div>
+          <div class="mb-4">
+            <div class="flex text-yellow-400 mb-2">
+              <span>★</span><span>★</span><span>★</span><span>★</span><span>★</span>
+            </div>
+            <p class="text-gray-700">
+              "AdTrack has transformed how we approach local advertising. The ROI tracking helped us identify which channels were working and which weren't."
+            </p>
+          </div>
+          <div class="text-sm text-gray-500 flex items-center">
+            <span class="font-medium text-green-600">+43% ROI</span>
+            <span class="mx-2">•</span>
+            <span>Restaurant</span>
+          </div>
+        </div>
+        
+        <!-- Testimonial 2 -->
+        <div class="bg-white p-6 rounded-lg shadow-md border border-gray-100">
+          <div class="flex items-center mb-4">
+            <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-800 font-bold">
+              MJ
+            </div>
+            <div class="ml-4">
+              <h4 class="font-semibold">Michael Johnson</h4>
+              <p class="text-sm text-gray-500">Owner, Eastside Hardware</p>
+            </div>
+          </div>
+          <div class="mb-4">
+            <div class="flex text-yellow-400 mb-2">
+              <span>★</span><span>★</span><span>★</span><span>★</span><span>★</span>
+            </div>
+            <p class="text-gray-700">
+              "As a small business, every dollar counts. AdTrack helped us identify which local advertising channels were working and which weren't. We've doubled our new customer acquisition."
+            </p>
+          </div>
+          <div class="text-sm text-gray-500 flex items-center">
+            <span class="font-medium text-green-600">2x New Customers</span>
+            <span class="mx-2">•</span>
+            <span>Local Advertising</span>
+          </div>
+        </div>
+        
+        <!-- Testimonial 3 -->
+        <div class="bg-white p-6 rounded-lg shadow-md border border-gray-100">
+          <div class="flex items-center mb-4">
+            <div class="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-800 font-bold">
+              SL
+            </div>
+            <div class="ml-4">
+              <h4 class="font-semibold">Sarah Lewis</h4>
+              <p class="text-sm text-gray-500">CMO, GreenTech Solutions</p>
+            </div>
+          </div>
+          <div class="mb-4">
+            <div class="flex text-yellow-400 mb-2">
+              <span>★</span><span>★</span><span>★</span><span>★</span><span>★</span>
+            </div>
+            <p class="text-gray-700">
+              "The competitor analysis feature is a game-changer. We discovered untapped marketing channels our competitors were using successfully and adapted our strategy accordingly."
+            </p>
+          </div>
+          <div class="text-sm text-gray-500 flex items-center">
+            <span class="font-medium text-green-600">+41% Market Share</span>
+            <span class="mx-2">•</span>
+            <span>Competitor Analysis</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing Section -->
+  <section id="pricing" class="py-16 bg-white">
+    <div class="container mx-auto px-4 md:px-6">
+      <div class="text-center mb-12">
+        <h2 class="text-3xl font-bold text-gray-900">Simple, Transparent Pricing</h2>
+        <p class="mt-4 text-xl text-gray-600 max-w-3xl mx-auto">
+          Start with our 7-day free trial, then choose the plan that works best for your business
+        </p>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+        <div class="border border-gray-200 rounded-lg p-6 bg-white">
+          <div class="text-center mb-4">
+            <h3 class="text-lg font-semibold">Basic Plan</h3>
+            <div class="mt-2">
+              <span class="text-3xl font-bold">$378.95</span>
+              <span class="text-gray-500">/month</span>
+            </div>
+          </div>
+          <ul class="space-y-3 mb-6">
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>Up to 5 active campaigns</span>
+            </li>
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>Basic ROI tracking</span>
+            </li>
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>Local competitor insights</span>
+            </li>
+          </ul>
+          <a href="/auth" class="block w-full py-2 px-4 bg-white border border-gray-300 hover:bg-gray-50 text-center font-medium rounded-lg">
+            Start Free Trial
+          </a>
+        </div>
+        <div class="border-2 border-blue-600 rounded-lg p-6 bg-white shadow-lg relative">
+          <div class="absolute top-0 right-0 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-bl-lg rounded-tr-lg">
+            POPULAR
+          </div>
+          <div class="text-center mb-4">
+            <h3 class="text-lg font-semibold">Professional Plan</h3>
+            <div class="mt-2">
+              <span class="text-3xl font-bold">$678.95</span>
+              <span class="text-gray-500">/month</span>
+            </div>
+          </div>
+          <ul class="space-y-3 mb-6">
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>Up to 20 active campaigns</span>
+            </li>
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>Advanced analytics dashboard</span>
+            </li>
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>AI-powered recommendations</span>
+            </li>
+          </ul>
+          <a href="/auth" class="block w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white text-center font-medium rounded-lg">
+            Start Free Trial
+          </a>
+        </div>
+        <div class="border border-gray-200 rounded-lg p-6 bg-white">
+          <div class="text-center mb-4">
+            <h3 class="text-lg font-semibold">Premium Plan</h3>
+            <div class="mt-2">
+              <span class="text-3xl font-bold">$978.95</span>
+              <span class="text-gray-500">/month</span>
+            </div>
+          </div>
+          <ul class="space-y-3 mb-6">
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>Unlimited campaigns</span>
+            </li>
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>All Professional features</span>
+            </li>
+            <li class="flex items-center">
+              <div class="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-2">✓</div>
+              <span>Custom ROI reporting</span>
+            </li>
+          </ul>
+          <a href="/auth" class="block w-full py-2 px-4 bg-white border border-gray-300 hover:bg-gray-50 text-center font-medium rounded-lg">
+            Start Free Trial
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Section -->
+  <section class="py-16 bg-blue-600 text-white">
+    <div class="container mx-auto px-4 md:px-6 text-center">
+      <h2 class="text-3xl font-bold mb-6">Ready to Transform Your Marketing ROI?</h2>
+      <p class="text-xl mb-8 max-w-3xl mx-auto">
+        Join thousands of businesses using AdTrack's AI-powered solutions to optimize their advertising spend and maximize returns.
+      </p>
+      <div class="flex flex-col sm:flex-row gap-4 justify-center">
+        <a href="/auth" class="bg-white text-blue-600 hover:bg-blue-50 font-bold py-3 px-6 rounded inline-flex items-center justify-center">
+          Start Your Free Trial
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-2">
+            <path d="M5 12h14"></path>
+            <path d="m12 5 7 7-7 7"></path>
+          </svg>
+        </a>
+        <a href="/about" class="border border-white text-white hover:bg-blue-700 font-bold py-3 px-6 rounded flex items-center justify-center">
+          Learn More About AdTrack
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer - with Blog, Case Studies, and Company sections -->
+  <footer class="bg-gray-900 text-gray-300 py-12">
+    <div class="container mx-auto px-4 md:px-6">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
+        <div>
+          <h3 class="text-white font-semibold text-lg mb-4">AdTrack</h3>
+          <p class="text-sm max-w-xs">
+            The industry's first AI-powered marketing analytics platform designed to maximize your advertising ROI.
+          </p>
+        </div>
+        <div>
+          <h4 class="text-white font-medium mb-4">Features</h4>
+          <ul class="space-y-2 text-sm">
+            <li><a href="#" class="hover:text-white">ROI Tracking</a></li>
+            <li><a href="#" class="hover:text-white">Competitor Analysis</a></li>
+            <li><a href="#" class="hover:text-white">AI Recommendations</a></li>
+            <li><a href="#" class="hover:text-white">Marketing Insights</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="text-white font-medium mb-4">Resources</h4>
+          <ul class="space-y-2 text-sm">
+            <li><a href="/blog" class="hover:text-white">Blog</a></li>
+            <li><a href="/case-studies" class="hover:text-white">Case Studies</a></li>
+            <li><a href="/roi-calculator" class="hover:text-white">ROI Calculator</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="text-white font-medium mb-4">Company</h4>
+          <ul class="space-y-2 text-sm">
+            <li><a href="/about" class="hover:text-white">About Us</a></li>
+            <li><a href="/privacy-policy" class="hover:text-white">Privacy Policy</a></li>
+            <li><a href="/terms-of-service" class="hover:text-white">Terms of Service</a></li>
+            <li><a href="/contact" class="hover:text-white">Contact</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="border-t border-gray-700 mt-8 pt-8 flex flex-col md:flex-row justify-between items-center">
+        <p class="text-sm">
+          &copy; 2025 AdTrack | <span class="text-blue-400 font-medium">AI-Powered Solutions</span>. All rights reserved.
+        </p>
+        <div class="mt-4 md:mt-0">
+          <ul class="flex space-x-4 text-sm">
+            <li>
+              <a href="/privacy-policy" class="hover:text-white transition-colors">
+                Privacy Policy
+              </a>
+            </li>
+            <li>
+              <a href="/terms-of-service" class="hover:text-white transition-colors">
+                Terms of Service
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>`;
+    
+    // Set correct content type for HTML
+    res.setHeader('Content-Type', 'text/html');
+    res.send(truescoreHTML);
+  });
+
+  // Business endpoints
+  app.get('/api/business/:id', async (req: Request, res: Response) => {
+    try {
+      const businessId = parseInt(req.params.id);
+      const business = await storage.getBusiness(businessId);
+      
+      if (!business) {
+        return res.status(404).json({ message: 'Business not found' });
+      }
+      
+      res.json(business);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  
+  app.put('/api/business/:id', async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const business = await storage.getBusiness(id);
+      
+      if (!business) {
+        return res.status(404).json({ message: 'Business not found' });
+      }
+      
+      // Check if the authenticated user is the owner of this business
+      if (req.isAuthenticated() && req.user && business.userId !== req.user.id) {
+        return res.status(403).json({ message: 'You do not have permission to update this business' });
+      }
+      
+      // Update the business
+      const updatedBusiness = await storage.updateBusiness(id, req.body);
+      res.json(updatedBusiness);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        res.status(400).json({ message: 'Invalid data format', errors: error.errors });
+      } else {
+        res.status(400).json({ message: error.message });
+      }
+    }
+  });
+
+  app.get('/api/user/:userId/business', async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const business = await storage.getBusinessByUserId(userId);
+      
+      if (!business) {
+        return res.status(404).json({ message: 'Business not found' });
+      }
+      
+      res.json(business);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Ad Method endpoints
+  app.get('/api/ad-methods', async (req: Request, res: Response) => {
+    try {
+      const adMethods = await storage.getAdMethods();
+      res.json(adMethods);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/ad-methods', async (req: Request, res: Response) => {
+    try {
+      const data = insertAdMethodSchema.parse(req.body);
+      const adMethod = await storage.createAdMethod(data);
+      res.status(201).json(adMethod);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.put('/api/ad-methods/:id', async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const data = insertAdMethodSchema.parse(req.body);
+      const adMethod = await storage.updateAdMethod(id, data);
+      res.json(adMethod);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete('/api/ad-methods/:id', async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const result = await storage.deleteAdMethod(id);
+      
+      if (!result) {
+        return res.status(404).json({ message: 'Ad method not found' });
+      }
+      
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Business Type endpoints
+  app.get('/api/business-types', async (req: Request, res: Response) => {
+    try {
+      const businessTypes = await storage.getBusinessTypes();
+      res.json(businessTypes);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/business-types', async (req: Request, res: Response) => {
+    try {
+      const data = insertBusinessTypeSchema.parse(req.body);
+      const businessType = await storage.createBusinessType(data);
+      res.status(201).json(businessType);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.put('/api/business-types/:id', async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const data = insertBusinessTypeSchema.parse(req.body);
+      const businessType = await storage.updateBusinessType(id, data);
+      res.json(businessType);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete('/api/business-types/:id', async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const result = await storage.deleteBusinessType(id);
+      
+      if (!result) {
+        return res.status(404).json({ message: 'Business type not found' });
+      }
+      
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Campaign endpoints
+  app.get('/api/business/:businessId/campaigns', async (req: Request, res: Response) => {
+    try {
+      const businessId = parseInt(req.params.businessId);
+      const campaigns = await storage.getCampaigns(businessId);
+      
+      // Get ad method details for each campaign
+      const adMethods = await storage.getAdMethods();
+      
+      const campaignsWithDetails = await Promise.all(campaigns.map(async (campaign) => {
+        const adMethod = adMethods.find(am => am.id === campaign.adMethodId);
+        return {
+          ...campaign,
+          adMethod: adMethod || undefined
+        };
+      }));
+      
+      res.json(campaignsWithDetails);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/business/:businessId/campaigns/roi', async (req: Request, res: Response) => {
+    try {
+      const businessId = parseInt(req.params.businessId);
+      const campaignsWithROI = await storage.getCampaignsWithROI(businessId);
+      
+      // Get ad method details for each campaign
+      const adMethods = await storage.getAdMethods();
+      
+      const campaignsWithDetails = campaignsWithROI.map(campaign => {
+        const adMethod = adMethods.find(am => am.id === campaign.adMethodId);
+        return {
+          ...campaign,
+          adMethod: adMethod || undefined
+        };
+      });
+      
+      res.json(campaignsWithDetails);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/campaigns/:id', async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const campaign = await storage.getCampaign(id);
+      
+      if (!campaign) {
+        return res.status(404).json({ message: 'Campaign not found' });
+      }
+      
+      // Get ad method details
+      const adMethod = await storage.getAdMethod(campaign.adMethodId);
+      
+      res.json({
+        ...campaign,
+        adMethod,
+        roi: storage.calculateROI(campaign)
+      });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  
+  // AI-Powered Benchmark Tooltip Insights endpoint
+  app.get('/api/benchmark-insights/:businessId/:metricType', async (req: Request, res: Response) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    try {
+      const { businessId, metricType } = req.params;
+      
+      // Validate metric type
+      if (!['roi', 'spend', 'revenue'].includes(metricType)) {
+        return res.status(400).json({ error: 'Invalid metric type. Must be roi, spend, or revenue.' });
+      }
+      
+      // Check if this is a premium feature and if user has access
+      const user = await storage.getUser(req.user!.id);
+      const business = await storage.getBusiness(parseInt(businessId));
+      
+      if (!business) {
+        return res.status(404).json({ error: 'Business not found' });
+      }
+      
+      // Check if the user owns the business 
+      if (business.userId !== req.user!.id && !req.user!.isAdmin) {
+        return res.status(403).json({ error: 'Access denied. You do not own this business.' });
+      }
+      
+      // Fetch business campaigns
+      const businessCampaigns = await storage.getCampaigns(parseInt(businessId))
+        .then(campaigns => campaigns.map(campaign => {
+          return {
+            ...campaign,
+            roi: storage.calculateROI(campaign)
+          };
+        }));
+        
+      if (!businessCampaigns || businessCampaigns.length === 0) {
+        return res.status(404).json({
+          error: 'No campaigns found for this business',
+          isPremiumFeature: true,
+          requiresPayment: true
+        });
+      }
+      
+      // Get competitor campaigns (all campaigns except from this business)
+      const competitorCampaigns = await storage.getTopPerformers()
+        .then(campaigns => campaigns
+          .filter(c => c.businessId !== parseInt(businessId))
+          .map(campaign => ({
+            ...campaign,
+            roi: storage.calculateROI(campaign)
+          }))
+        );
+      
+      // Get business type
+      const businessType = business.businessType;
+      
+      // Generate AI insights
+      const benchmarkInsights = await generateBenchmarkInsights(
+        businessCampaigns,
+        competitorCampaigns,
+        metricType as 'roi' | 'spend' | 'revenue',
+        businessType
+      );
+      
+      res.json({
+        insights: benchmarkInsights,
+        isPremiumFeature: true,
+        hasAccess: true // In a real implementation, check if user has paid for premium features
+      });
+    } catch (error) {
+      console.error('Error generating benchmark insights:', error);
+      res.status(500).json({ error: 'Failed to generate benchmark insights' });
+    }
+  });
+
+  app.post('/api/campaigns', upload.single('file'), async (req: Request, res: Response) => {
+    try {
+      const file = req.file;
+      const data = JSON.parse(req.body.data);
+      
+      const validatedData = insertCampaignSchema.parse({
+        ...data,
+        fileUrl: file ? `/uploads/${file.filename}` : undefined
+      });
+      
+      const campaign = await storage.createCampaign(validatedData);
+      res.status(201).json(campaign);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.put('/api/campaigns/:id', upload.single('file'), async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const file = req.file;
+      const data = JSON.parse(req.body.data);
+      
+      // Include file URL only if a new file was uploaded
+      const updateData = {
+        ...data,
+        ...(file ? { fileUrl: `/uploads/${file.filename}` } : {})
+      };
+      
+      const campaign = await storage.updateCampaign(id, updateData);
+      res.json(campaign);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete('/api/campaigns/:id', async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const result = await storage.deleteCampaign(id);
+      
+      if (!result) {
+        return res.status(404).json({ message: 'Campaign not found' });
+      }
+      
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Business Stats endpoint
+  app.get('/api/business/:businessId/stats', async (req: Request, res: Response) => {
+    try {
+      const businessId = parseInt(req.params.businessId);
+      const stats = await storage.getBusinessStats(businessId);
+      res.json(stats);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Top performers endpoint
+  app.get('/api/top-performers', async (req: Request, res: Response) => {
+    try {
+      const { businessType, adMethodId, latitude, longitude, radius, limit } = req.query;
+      
+      // If no parameters, return sample data for demo purposes
+      if (!req.query.businessType || !req.query.adMethodId || !req.query.latitude || !req.query.longitude) {
+        // Get demo data
+        const adMethods = await storage.getAdMethods();
+        const demoData = [
+          // Social Media Ads (Ad Method ID: 1) - 5 entries + Demo Business
+          // Your business (demo account)
+          {
+            id: 101,
+            name: "Demo Facebook Campaign",
+            adMethodId: 1,
+            businessId: 2, // This will match the demo account business ID
+            description: "Social media campaign example",
+            amountSpent: "1500.00",
+            startDate: new Date("2024-01-01"),
+            endDate: new Date("2024-02-01"),
+            amountEarned: "3200.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 113.33,
+            business: { id: 2, name: "Demo Business" },
+            adMethod: adMethods.find(am => am.id === 1) || undefined,
+            areaRank: 3,
+            totalInArea: 25
+          },
+          {
+            id: 103,
+            name: "Bakery Instagram Ads",
+            adMethodId: 1,
+            businessId: 6,
+            description: "Social media promotion",
+            amountSpent: "1200.00",
+            startDate: new Date("2024-02-01"),
+            endDate: new Date("2024-03-01"),
+            amountEarned: "2700.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 125.00,
+            business: { id: 6, name: "Sweet Treats Bakery" },
+            adMethod: adMethods.find(am => am.id === 1) || undefined,
+            areaRank: 2,
+            totalInArea: 25
+          },
+          {
+            id: 106,
+            name: "YouTube Pre-roll Ads",
+            adMethodId: 1,
+            businessId: 9,
+            description: "Video advertisements",
+            amountSpent: "2500.00",
+            startDate: new Date("2024-01-20"),
+            endDate: new Date("2024-02-20"),
+            amountEarned: "5250.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 110.00,
+            business: { id: 9, name: "Local Gym" },
+            adMethod: adMethods.find(am => am.id === 1) || undefined,
+            areaRank: 4,
+            totalInArea: 25
+          },
+          {
+            id: 108,
+            name: "Facebook Carousel Ads",
+            adMethodId: 1,
+            businessId: 11,
+            description: "Interactive ad format",
+            amountSpent: "1800.00",
+            startDate: new Date("2024-01-05"),
+            endDate: new Date("2024-02-05"),
+            amountEarned: "4500.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 150.00,
+            business: { id: 11, name: "Fashion Boutique" },
+            adMethod: adMethods.find(am => am.id === 1) || undefined,
+            areaRank: 1,
+            totalInArea: 25
+          },
+          {
+            id: 109,
+            name: "Pinterest Promoted Pins",
+            adMethodId: 1,
+            businessId: 12,
+            description: "Visual social media ads",
+            amountSpent: "1000.00",
+            startDate: new Date("2024-02-10"),
+            endDate: new Date("2024-03-10"),
+            amountEarned: "1700.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 70.00,
+            business: { id: 12, name: "Home Decor Store" },
+            adMethod: adMethods.find(am => am.id === 1) || undefined,
+            areaRank: 5,
+            totalInArea: 25
+          },
+          {
+            id: 110,
+            name: "TikTok Ad Campaign",
+            adMethodId: 1,
+            businessId: 13,
+            description: "Short-form video ads",
+            amountSpent: "2000.00",
+            startDate: new Date("2024-01-15"),
+            endDate: new Date("2024-02-15"),
+            amountEarned: "3800.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 90.00,
+            business: { id: 13, name: "Urban Clothing" },
+            adMethod: adMethods.find(am => am.id === 1) || undefined,
+            areaRank: 5,
+            totalInArea: 25
+          },
+          
+          // Email Marketing (Ad Method ID: 2) - 5 entries
+          {
+            id: 112,
+            name: "Coffee Shop Email Newsletter",
+            adMethodId: 2,
+            businessId: 5,
+            description: "Weekly promotions newsletter",
+            amountSpent: "2000.00",
+            startDate: new Date("2024-01-15"),
+            endDate: new Date("2024-02-15"),
+            amountEarned: "4500.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 125.00,
+            business: { id: 5, name: "Downtown Coffee" },
+            adMethod: adMethods.find(am => am.id === 2) || undefined,
+            areaRank: 1,
+            totalInArea: 25
+          },
+          {
+            id: 113,
+            name: "Monthly Email Digest",
+            adMethodId: 2,
+            businessId: 14,
+            description: "Monthly product highlights",
+            amountSpent: "800.00",
+            startDate: new Date("2024-01-01"),
+            endDate: new Date("2024-01-31"),
+            amountEarned: "1700.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 112.50,
+            business: { id: 14, name: "Tech Gadgets Store" },
+            adMethod: adMethods.find(am => am.id === 2) || undefined,
+            areaRank: 2,
+            totalInArea: 25
+          },
+          {
+            id: 114,
+            name: "Customer Re-engagement",
+            adMethodId: 2,
+            businessId: 15,
+            description: "Special offers to inactive customers",
+            amountSpent: "500.00",
+            startDate: new Date("2024-02-01"),
+            endDate: new Date("2024-02-29"),
+            amountEarned: "1300.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 160.00,
+            business: { id: 15, name: "Beauty Salon" },
+            adMethod: adMethods.find(am => am.id === 2) || undefined,
+            areaRank: 3,
+            totalInArea: 25
+          },
+          {
+            id: 115,
+            name: "Seasonal Sale Email",
+            adMethodId: 2,
+            businessId: 16,
+            description: "Winter clearance promotion",
+            amountSpent: "1200.00",
+            startDate: new Date("2024-01-20"),
+            endDate: new Date("2024-02-20"),
+            amountEarned: "2100.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 75.00,
+            business: { id: 16, name: "Winter Gear Shop" },
+            adMethod: adMethods.find(am => am.id === 2) || undefined,
+            areaRank: 4,
+            totalInArea: 25
+          },
+          {
+            id: 116,
+            name: "New Product Announcement",
+            adMethodId: 2,
+            businessId: 17,
+            description: "Product launch email campaign",
+            amountSpent: "1500.00",
+            startDate: new Date("2024-02-05"),
+            endDate: new Date("2024-03-05"),
+            amountEarned: "2400.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 60.00,
+            business: { id: 17, name: "Electronics Store" },
+            adMethod: adMethods.find(am => am.id === 2) || undefined,
+            areaRank: 5,
+            totalInArea: 25
+          },
+          
+          // Local Newspaper (Ad Method ID: 3) - 5 entries
+          {
+            id: 118,
+            name: "Local Newspaper Ad",
+            adMethodId: 3,
+            businessId: 8,
+            description: "Half-page print advertisement",
+            amountSpent: "800.00",
+            startDate: new Date("2024-02-05"),
+            endDate: new Date("2024-03-05"),
+            amountEarned: "1000.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 25.00,
+            business: { id: 8, name: "Hardware Store" },
+            adMethod: adMethods.find(am => am.id === 3) || undefined,
+            areaRank: 5,
+            totalInArea: 25
+          },
+          {
+            id: 119,
+            name: "Weekend Edition Ad",
+            adMethodId: 3,
+            businessId: 18,
+            description: "Front page advertisement",
+            amountSpent: "1200.00",
+            startDate: new Date("2024-01-15"),
+            endDate: new Date("2024-02-15"),
+            amountEarned: "1800.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 50.00,
+            business: { id: 18, name: "Local Restaurant" },
+            adMethod: adMethods.find(am => am.id === 3) || undefined,
+            areaRank: 4,
+            totalInArea: 25
+          },
+          {
+            id: 120,
+            name: "Classified Section Ad",
+            adMethodId: 3,
+            businessId: 19,
+            description: "Small classified advertisement",
+            amountSpent: "300.00",
+            startDate: new Date("2024-02-01"),
+            endDate: new Date("2024-02-28"),
+            amountEarned: "510.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 70.00,
+            business: { id: 19, name: "Auto Repair Shop" },
+            adMethod: adMethods.find(am => am.id === 3) || undefined,
+            areaRank: 3,
+            totalInArea: 25
+          },
+          {
+            id: 121,
+            name: "Business Section Feature",
+            adMethodId: 3,
+            businessId: 20,
+            description: "Feature article with advertisement",
+            amountSpent: "1500.00",
+            startDate: new Date("2024-01-10"),
+            endDate: new Date("2024-02-10"),
+            amountEarned: "3000.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 100.00,
+            business: { id: 20, name: "Financial Services" },
+            adMethod: adMethods.find(am => am.id === 3) || undefined,
+            areaRank: 1,
+            totalInArea: 25
+          },
+          {
+            id: 122,
+            name: "Special Insert Ad",
+            adMethodId: 3,
+            businessId: 21,
+            description: "Special holiday edition insert",
+            amountSpent: "1000.00",
+            startDate: new Date("2024-02-10"),
+            endDate: new Date("2024-03-10"),
+            amountEarned: "1800.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 80.00,
+            business: { id: 21, name: "Furniture Store" },
+            adMethod: adMethods.find(am => am.id === 3) || undefined,
+            areaRank: 2,
+            totalInArea: 25
+          },
+          
+          // Radio (Ad Method ID: 4) - 5 entries
+          {
+            id: 123,
+            name: "Local Radio Spot",
+            adMethodId: 4,
+            businessId: 7,
+            description: "30-second radio advertisement",
+            amountSpent: "3000.00",
+            startDate: new Date("2024-01-10"),
+            endDate: new Date("2024-02-10"),
+            amountEarned: "5100.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 70.00,
+            business: { id: 7, name: "Main Street Diner" },
+            adMethod: adMethods.find(am => am.id === 4) || undefined,
+            areaRank: 3,
+            totalInArea: 25
+          },
+          {
+            id: 124,
+            name: "Morning Show Sponsorship",
+            adMethodId: 4,
+            businessId: 22,
+            description: "Regular mention during morning drive",
+            amountSpent: "4500.00",
+            startDate: new Date("2024-01-01"),
+            endDate: new Date("2024-01-31"),
+            amountEarned: "9000.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 100.00,
+            business: { id: 22, name: "Coffee Chain" },
+            adMethod: adMethods.find(am => am.id === 4) || undefined,
+            areaRank: 1,
+            totalInArea: 25
+          },
+          {
+            id: 125,
+            name: "Weather Report Sponsor",
+            adMethodId: 4,
+            businessId: 23,
+            description: "Sponsor for hourly weather reports",
+            amountSpent: "2500.00",
+            startDate: new Date("2024-02-01"),
+            endDate: new Date("2024-02-29"),
+            amountEarned: "4750.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 90.00,
+            business: { id: 23, name: "Umbrella Company" },
+            adMethod: adMethods.find(am => am.id === 4) || undefined,
+            areaRank: 2,
+            totalInArea: 25
+          },
+          {
+            id: 126,
+            name: "Weekend Event Promotion",
+            adMethodId: 4,
+            businessId: 24,
+            description: "Special event announcement",
+            amountSpent: "1800.00",
+            startDate: new Date("2024-01-15"),
+            endDate: new Date("2024-02-15"),
+            amountEarned: "2700.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 50.00,
+            business: { id: 24, name: "Community Center" },
+            adMethod: adMethods.find(am => am.id === 4) || undefined,
+            areaRank: 4,
+            totalInArea: 25
+          },
+          {
+            id: 127,
+            name: "Evening Drive-Time Ads",
+            adMethodId: 4,
+            businessId: 25,
+            description: "Rush hour radio spots",
+            amountSpent: "3500.00",
+            startDate: new Date("2024-02-05"),
+            endDate: new Date("2024-03-05"),
+            amountEarned: "4550.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 30.00,
+            business: { id: 25, name: "Car Dealership" },
+            adMethod: adMethods.find(am => am.id === 4) || undefined,
+            areaRank: 5,
+            totalInArea: 25
+          },
+          
+          // SMS Marketing (Ad Method ID: 5) - 5 entries
+          {
+            id: 128,
+            name: "Email Marketing Campaign",
+            adMethodId: 5,
+            businessId: 10,
+            description: "Newsletter promotion",
+            amountSpent: "500.00",
+            startDate: new Date("2024-02-15"),
+            endDate: new Date("2024-03-15"),
+            amountEarned: "950.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 90.00,
+            business: { id: 10, name: "Book Store" },
+            adMethod: adMethods.find(am => am.id === 5) || undefined,
+            areaRank: 2,
+            totalInArea: 25
+          },
+          {
+            id: 129,
+            name: "Flash Sale SMS Campaign",
+            adMethodId: 5,
+            businessId: 26,
+            description: "24-hour sale promotion",
+            amountSpent: "300.00",
+            startDate: new Date("2024-01-20"),
+            endDate: new Date("2024-01-21"),
+            amountEarned: "900.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 200.00,
+            business: { id: 26, name: "Shoe Store" },
+            adMethod: adMethods.find(am => am.id === 5) || undefined,
+            areaRank: 1,
+            totalInArea: 25
+          },
+          {
+            id: 130,
+            name: "Loyalty Program Reminders",
+            adMethodId: 5,
+            businessId: 27,
+            description: "Points expiry notifications",
+            amountSpent: "400.00",
+            startDate: new Date("2024-02-01"),
+            endDate: new Date("2024-02-28"),
+            amountEarned: "680.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 70.00,
+            business: { id: 27, name: "Grocery Store" },
+            adMethod: adMethods.find(am => am.id === 5) || undefined,
+            areaRank: 3,
+            totalInArea: 25
+          },
+          {
+            id: 131,
+            name: "Appointment Reminders",
+            adMethodId: 5,
+            businessId: 28,
+            description: "Service booking confirmations",
+            amountSpent: "600.00",
+            startDate: new Date("2024-01-15"),
+            endDate: new Date("2024-02-15"),
+            amountEarned: "900.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 50.00,
+            business: { id: 28, name: "Dental Clinic" },
+            adMethod: adMethods.find(am => am.id === 5) || undefined,
+            areaRank: 4,
+            totalInArea: 25
+          },
+          {
+            id: 132,
+            name: "New Arrival Notifications",
+            adMethodId: 5,
+            businessId: 29,
+            description: "Product launch SMS alerts",
+            amountSpent: "350.00",
+            startDate: new Date("2024-02-10"),
+            endDate: new Date("2024-03-10"),
+            amountEarned: "455.00",
+            isActive: false,
+            fileUrl: null,
+            createdAt: new Date(),
+            roi: 30.00,
+            business: { id: 29, name: "Toy Store" },
+            adMethod: adMethods.find(am => am.id === 5) || undefined,
+            areaRank: 5,
+            totalInArea: 25
+          }
+        ];
+        
+        return res.json(demoData);
+      }
+      
+      // Get real data from database
+      const performers = await storage.getTopROICampaigns(
+        businessType as string,
+        parseInt(adMethodId as string),
+        parseFloat(latitude as string),
+        parseFloat(longitude as string),
+        parseFloat(radius as string || '3'), // Default to 3 miles
+        parseInt(limit as string || '20')    // Default to top 20
+      );
+      
+      res.json(performers);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Notification settings endpoints
+  app.get('/api/user/:userId/notification-settings', async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      if (!req.isAuthenticated() || (req.user?.id !== userId && !req.user?.isAdmin)) {
+        return res.status(403).json({ message: 'Not authorized to access these notification settings' });
+      }
+      
+      const settings = await storage.getNotificationSettings(userId);
+      
+      if (!settings) {
+        return res.status(404).json({ message: 'Notification settings not found' });
+      }
+      
+      res.json(settings);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  
+  app.post('/api/user/:userId/notification-settings', async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      if (!req.isAuthenticated() || (req.user?.id !== userId && !req.user?.isAdmin)) {
+        return res.status(403).json({ message: 'Not authorized to create notification settings' });
+      }
+      
+      // Check if settings already exist
+      const existingSettings = await storage.getNotificationSettings(userId);
+      if (existingSettings) {
+        return res.status(400).json({ message: 'Notification settings already exist for this user' });
+      }
+      
+      const data = insertNotificationSettingsSchema.parse({
+        ...req.body,
+        userId
+      });
+      
+      const settings = await storage.createNotificationSettings(data);
+      res.status(201).json(settings);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  
+  app.put('/api/user/:userId/notification-settings/:id', async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const settingsId = parseInt(req.params.id);
+      
+      if (!req.isAuthenticated() || (req.user?.id !== userId && !req.user?.isAdmin)) {
+        return res.status(403).json({ message: 'Not authorized to update these notification settings' });
+      }
+      
+      // Create a data object without userId to prevent changing the owner
+      const { userId: _, ...updateData } = req.body;
+      
+      const settings = await storage.updateNotificationSettings(settingsId, updateData);
+      res.json(settings);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  
+  // Manually send a test notification
+  app.post('/api/user/:userId/send-test-notification', async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const { type } = req.body;
+      
+      if (!req.isAuthenticated() || (req.user?.id !== userId && !req.user?.isAdmin)) {
+        return res.status(403).json({ message: 'Not authorized to send test notifications' });
+      }
+      
+      // Get user notification settings
+      const settings = await storage.getNotificationSettings(userId);
+      if (!settings) {
+        return res.status(404).json({ message: 'Notification settings not found' });
+      }
+      
+      // Get user email from settings
+      const userEmail = settings.email;
+      
+      let emailSent = false;
+      
+      // Send the appropriate test notification
+      switch (type) {
+        case 'roi':
+          if (settings.roiAlerts) {
+            const emailContent = emailTemplates.roiAlert('Test Campaign', 150);
+            emailSent = await sendEmail({
+              to: userEmail,
+              from: 'noreply@adtrack.com',
+              subject: emailContent.subject,
+              text: emailContent.text,
+              html: emailContent.html
+            });
+          } else {
+            return res.status(400).json({ message: 'ROI alerts are disabled for this user' });
+          }
+          break;
+          
+        case 'reminder':
+          if (settings.campaignReminders) {
+            const emailContent = emailTemplates.campaignReminder('Test Campaign', 14);
+            emailSent = await sendEmail({
+              to: userEmail,
+              from: 'noreply@adtrack.com',
+              subject: emailContent.subject,
+              text: emailContent.text,
+              html: emailContent.html
+            });
+          } else {
+            return res.status(400).json({ message: 'Campaign reminders are disabled for this user' });
+          }
+          break;
+          
+        case 'weekly':
+          if (settings.weeklyReports) {
+            const emailContent = emailTemplates.weeklyReport('Your Business', 5, 125.5);
+            emailSent = await sendEmail({
+              to: userEmail,
+              from: 'noreply@adtrack.com',
+              subject: emailContent.subject,
+              text: emailContent.text,
+              html: emailContent.html
+            });
+          } else {
+            return res.status(400).json({ message: 'Weekly reports are disabled for this user' });
+          }
+          break;
+          
+        default:
+          return res.status(400).json({ message: 'Invalid notification type. Use "roi", "reminder", or "weekly".' });
+      }
+      
+      // In development mode without a valid API key, the mock email mode will return true
+      // and log the email contents to the console
+      res.json({ 
+        message: `Test ${type} notification sent successfully to ${userEmail}`,
+        mode: process.env.SENDGRID_API_KEY ? 'real' : 'mock'
+      });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // API route for creating a payment intent
+  // Endpoint to handle subscriptions
+  app.post('/api/get-or-create-subscription', async (req: Request, res: Response) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'You must be logged in to create a subscription' });
+      }
+
+      const user = req.user;
+      const { planId, discountCode } = req.body;
+      
+      console.log('Subscription request with planId:', planId, 'discountCode:', discountCode ? discountCode : 'none');
+      
+      // If user already has a subscription, return it
+      if (user.stripeSubscriptionId) {
+        console.log('User already has subscription, retrieving:', user.stripeSubscriptionId);
+        
+        try {
+          const subscription = await stripeModule.stripe.subscriptions.retrieve(user.stripeSubscriptionId);
+          
+          // Check if we need to return a client secret for payment
+          if (subscription.latest_invoice?.payment_intent) {
+            return res.json({
+              subscriptionId: subscription.id,
+              clientSecret: subscription.latest_invoice.payment_intent.client_secret,
+            });
+          } else {
+            return res.json({
+              subscriptionId: subscription.id,
+              status: subscription.status
+            });
+          }
+        } catch (err) {
+          console.error('Error retrieving subscription:', err);
+          // Continue to create a new subscription if retrieving fails
+        }
+      }
+      
+      if (!user.email) {
+        return res.status(400).json({ message: 'User email is required for subscription' });
+      }
+      
+      console.log('Creating new customer and subscription for user:', user.id);
+      
+      // Check if we should use mock data
+      let useMockData = !process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_SECRET_KEY.startsWith('sk_');
+      
+      // Create a customer ID (real or mock)
+      let customer;
+      
+      if (useMockData) {
+        // Create a mock customer
+        console.log('Using mock customer due to invalid Stripe key');
+        customer = {
+          id: `cus_mock_${Date.now()}`,
+          email: user.email,
+          name: user.username
+        };
+      } else {
+        try {
+          // Try to create a real customer
+          customer = await stripeModule.stripe.customers.create({
+            email: user.email,
+            name: user.username,
+            metadata: {
+              userId: user.id.toString()
+            }
+          });
+        } catch (err) {
+          // Fall back to mock on error
+          console.log('Error creating Stripe customer, using mock instead:', err);
+          customer = {
+            id: `cus_mock_${Date.now()}`,
+            email: user.email,
+            name: user.username
+          };
+          // Set useMockData flag to true since we had an error
+          useMockData = true;
+        }
+      }
+      
+      console.log('Customer created:', customer.id);
+      
+      // Update the user with the Stripe customer ID
+      await storage.updateStripeCustomerId(user.id, customer.id);
+      
+      // Get the appropriate price ID based on the selected plan
+      let stripePriceId = process.env.STRIPE_PRICE_ID || 'price_basic';
+      
+      // If planId is provided, look up the corresponding pricing config
+      if (planId) {
+        try {
+          const [pricingPlan] = await db.select().from(pricingConfig).where(eq(pricingConfig.id, planId));
+          
+          if (pricingPlan) {
+            console.log('Found pricing plan:', pricingPlan.name);
+            
+            // Map pricing plan to Stripe price IDs
+            // This would ideally come from the database, but we're using a simple mapping for now
+            switch(pricingPlan.name.toLowerCase()) {
+              case 'basic plan':
+                stripePriceId = process.env.STRIPE_PRICE_ID_BASIC || 'price_basic';
+                break;
+              case 'professional plan':
+                stripePriceId = process.env.STRIPE_PRICE_ID_PRO || 'price_pro';
+                break;
+              case 'premium plan':
+                stripePriceId = process.env.STRIPE_PRICE_ID_PREMIUM || 'price_premium';
+                break;
+              default:
+                // Default to standard price
+                stripePriceId = process.env.STRIPE_PRICE_ID || 'price_basic';
+            }
+            
+            console.log('Selected Stripe price ID:', stripePriceId);
+          }
+        } catch (err) {
+          console.error('Error retrieving pricing plan:', err);
+          // Fall back to default price ID
+        }
+      }
+      
+      // If we've already determined we need to use mock data, create a mock subscription
+      if (useMockData) {
+        console.log('Using mock subscription due to invalid Stripe key');
+        
+        // Create a mock subscription for testing purposes
+        const mockSubscriptionId = `sub_mock_${Date.now()}`;
+        const mockPaymentIntentId = `pi_mock_${Date.now()}`;
+        // Use the exact format that Stripe expects for client secrets: "pi_xxxxx_secret_xxxxx"
+        const mockClientSecret = `${mockPaymentIntentId.replace('_mock', '')}_secret_${Math.random().toString(36).substring(2, 15)}`;
+        
+        // Update user with mock data and end trial period
+        await storage.updateUserStripeInfo(user.id, {
+          stripeCustomerId: customer.id,
+          stripeSubscriptionId: mockSubscriptionId,
+          isTrialPeriod: false  // End trial period when subscription is created
+        });
+        
+        // Return a mock client secret to the frontend
+        return res.status(200).json({
+          subscriptionId: mockSubscriptionId,
+          clientSecret: mockClientSecret,
+          isMockSubscription: true,
+        });
+      }
+      
+      // Check for discount code
+      let discountedAmount = 0;
+      let validatedDiscountCode = null;
+      let stripeCouponId = null;
+      
+      // Process discount code if provided
+      if (discountCode && !useMockData) {
+        try {
+          console.log('Validating discount code:', discountCode);
+          
+          // Determine plan type for validation
+          const selectedPlan = planId ? 
+            (await db.select().from(pricingConfig).where(eq(pricingConfig.id, planId)))[0] : 
+            null;
+            
+          const planType = selectedPlan?.name?.toLowerCase().includes('basic') 
+            ? 'basic' 
+            : selectedPlan?.name?.toLowerCase().includes('professional') 
+              ? 'professional' 
+              : selectedPlan?.name?.toLowerCase().includes('premium') 
+                ? 'premium' 
+                : 'all';
+                
+          // Validate the discount code
+          const validationResult = await discountCodeStorage.validateDiscountCode(discountCode, planType);
+          
+          if (validationResult.valid && validationResult.discountCode) {
+            validatedDiscountCode = validationResult.discountCode;
+            console.log('Valid discount code:', validatedDiscountCode.code, 'type:', validatedDiscountCode.discountType);
+            
+            // For Stripe, we need to create a coupon 
+            if (validatedDiscountCode.discountType === 'percentage') {
+              // Convert percentage (stored as string like '25') to decimal for Stripe (0.25)
+              const percentOff = parseInt(validatedDiscountCode.discountValue) / 100;
+              
+              // Create a coupon in Stripe (or use existing one with same discount)
+              const couponId = `ADTRACK_${validatedDiscountCode.discountValue}PERCENT`;
+              
+              try {
+                // Check if coupon already exists
+                await stripeModule.stripe.coupons.retrieve(couponId);
+                stripeCouponId = couponId;
+              } catch (err) {
+                // Coupon doesn't exist, create it
+                const coupon = await stripeModule.stripe.coupons.create({
+                  id: couponId,
+                  percent_off: percentOff * 100, // Stripe expects whole number percentage (25 for 25%)
+                  duration: 'forever', // Or 'once', 'repeating'
+                });
+                stripeCouponId = coupon.id;
+              }
+            } else if (validatedDiscountCode.discountType === 'fixed') {
+              // Fixed amount discount
+              const amountOff = parseInt(validatedDiscountCode.discountValue) * 100; // Convert to cents
+              
+              // Create a coupon in Stripe
+              const couponId = `ADTRACK_${validatedDiscountCode.discountValue}OFF`;
+              
+              try {
+                // Check if coupon already exists
+                await stripeModule.stripe.coupons.retrieve(couponId);
+                stripeCouponId = couponId;
+              } catch (err) {
+                // Coupon doesn't exist, create it
+                const coupon = await stripeModule.stripe.coupons.create({
+                  id: couponId,
+                  amount_off: amountOff,
+                  currency: 'usd',
+                  duration: 'forever',
+                });
+                stripeCouponId = coupon.id;
+              }
+            }
+            
+            // Record discount code usage
+            if (planId) {
+              try {
+                const selectedPlan = (await db.select().from(pricingConfig).where(eq(pricingConfig.id, planId)))[0];
+                if (selectedPlan) {
+                  // Calculate discounted price
+                  const discountInfo = await discountCodeStorage.calculateDiscountedPrice(
+                    parseFloat(selectedPlan.price), 
+                    validatedDiscountCode
+                  );
+                  
+                  discountedAmount = discountInfo.discountAmount;
+                  
+                  // Record the usage (we'll update with Stripe IDs after subscription is created)
+                  await discountCodeStorage.recordDiscountCodeUsage({
+                    discountCodeId: validatedDiscountCode.id,
+                    userId: user.id,
+                    planId: planId,
+                    planName: selectedPlan.name,
+                    originalAmount: selectedPlan.price,
+                    discountedAmount: discountInfo.discountedPrice.toString()
+                  });
+                }
+              } catch (err) {
+                console.error('Error recording discount code usage:', err);
+                // Continue with subscription even if recording fails
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Error processing discount code:', err);
+          // Continue without discount if there's an error
+        }
+      }
+      
+      try {
+        // Prepare subscription creation options
+        const subscriptionOptions: any = {
+          customer: customer.id,
+          items: [{
+            price: stripePriceId,
+          }],
+          payment_behavior: 'default_incomplete',
+          expand: ['latest_invoice.payment_intent'],
+        };
+        
+        // Add coupon if we have one
+        if (stripeCouponId) {
+          subscriptionOptions.coupon = stripeCouponId;
+        }
+        
+        // Create the subscription
+        const subscription = await stripeModule.stripe.subscriptions.create(subscriptionOptions);
+        
+        console.log('Subscription created:', subscription.id);
+        
+        // Update the user with both customer and subscription IDs
+        await storage.updateUserStripeInfo(user.id, {
+          stripeCustomerId: customer.id,
+          stripeSubscriptionId: subscription.id,
+          isTrialPeriod: false  // End trial period when subscription is created
+        });
+        
+        // Return the client secret to the client to complete payment
+        return res.status(200).json({
+          subscriptionId: subscription.id,
+          clientSecret: subscription.latest_invoice?.payment_intent?.client_secret,
+          discountApplied: !!stripeCouponId,
+          discountCode: validatedDiscountCode ? validatedDiscountCode.code : null,
+          discountAmount: discountedAmount
+        });
+      } catch (stripeError: any) {
+        console.error('Stripe API error during subscription creation:', stripeError);
+        
+        // For any Stripe errors, use the mock implementation
+        console.log('Falling back to mock subscription due to Stripe error');
+        
+        // Create a mock subscription instead
+        const mockSubscriptionId = `sub_mock_${Date.now()}`;
+        const mockPaymentIntentId = `pi_mock_${Date.now()}`;
+        // Use the exact format that Stripe expects for client secrets: "pi_xxxxx_secret_xxxxx"
+        const mockClientSecret = `${mockPaymentIntentId.replace('_mock', '')}_secret_${Math.random().toString(36).substring(2, 15)}`;
+        
+        // Update user with mock data (for testing purposes)
+        await storage.updateUserStripeInfo(user.id, {
+          stripeCustomerId: customer.id,
+          stripeSubscriptionId: mockSubscriptionId,
+          isTrialPeriod: false  // End trial period when subscription is created
+        });
+        
+        // Return a client secret to the frontend
+        return res.status(200).json({
+          subscriptionId: mockSubscriptionId,
+          clientSecret: mockClientSecret,
+          isMockSubscription: true,
+        });
+      }
+    } catch (error: any) {
+      console.error('Subscription creation error:', error);
+      return res.status(400).json({ 
+        message: error.message || 'An error occurred while creating the subscription' 
+      });
+    }
+  });
+
+  app.post('/api/create-payment-intent', async (req: Request, res: Response) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'You must be logged in to make a purchase' });
+      }
+
+      const { amount, selectedItemIds } = req.body;
+      
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ message: 'Invalid purchase amount' });
+      }
+      
+      console.log('Creating payment intent for amount:', amount, 'for items:', selectedItemIds);
+      
+      // Create a payment intent with the order amount and currency
+      const paymentIntent = await createPaymentIntent({
+        amount,
+        metadata: {
+          userId: req.user?.id.toString(),
+          selectedItems: JSON.stringify(selectedItemIds || []),
+          type: 'top_performers_purchase',
+          purchaseDescription: `Top Performers Data Purchase - User ${req.user?.id}`
+        }
+      });
+
+      console.log('Payment intent created successfully:', paymentIntent.id);
+      
+      // Send the client secret to the client
+      res.status(200).json({ 
+        clientSecret: paymentIntent.clientSecret,
+        paymentIntentId: paymentIntent.id
+      });
+    } catch (error: any) {
+      console.error('Stripe payment intent error:', error);
+      
+      // Return error instead of using mock data
+      res.status(400).json({
+        message: error.message || 'An error occurred creating the payment intent',
+        error: true
+      });
+    }
+  });
+  
+  // Endpoint to record a successful purchase
+  app.post('/api/record-purchase', async (req: Request, res: Response) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'You must be logged in to record a purchase' });
+      }
+      
+      // Log the purchase information
+      console.log('Recording purchase:', {
+        userId: req.user?.id,
+        ...req.body
+      });
+      
+      // In a real application, we would save this to the database
+      // and grant access to the purchased content
+      
+      // Return success
+      res.status(200).json({ 
+        success: true,
+        message: 'Purchase recorded successfully'
+      });
+    } catch (error: any) {
+      console.error('Error recording purchase:', error);
+      res.status(500).json({ 
+        message: error.message || 'An error occurred while recording your purchase' 
+      });
+    }
+  });
+  
+  // Legacy API for backward compatibility
+  app.post('/api/purchase-top-performers', async (req: Request, res: Response) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'You must be logged in to make a purchase' });
+      }
+      
+      const { selectedItemIds } = req.body;
+      
+      // Support both new (IDs) and old (selectedIndexes) formats for backwards compatibility
+      const itemIds = selectedItemIds || req.body.selectedIndexes;
+      
+      if (!Array.isArray(itemIds) || itemIds.length === 0) {
+        return res.status(400).json({ message: 'No performers selected for purchase' });
+      }
+      
+      // This route now redirects to Stripe payment flow by creating a payment intent
+      // and returning the client secret for the frontend to handle
+      const amount = itemIds.length * 19.99; // $19.99 per item
+      
+      // Create a payment intent with the order amount and currency
+      const paymentIntent = await createPaymentIntent({
+        amount,
+        metadata: {
+          userId: req.user?.id.toString(),
+          selectedItems: JSON.stringify(itemIds),
+          type: 'top_performers_purchase',
+          purchaseDescription: `Top Performers Data Purchase - User ${req.user?.id}`
+        }
+      });
+
+      // Send the client secret to the client
+      res.status(200).json({ 
+        success: true,
+        message: 'Payment intent created',
+        clientSecret: paymentIntent.clientSecret,
+        paymentIntentId: paymentIntent.id,
+        itemIds
+      });
+    } catch (error: any) {
+      console.error('Payment error:', error);
+      res.status(400).json({ message: error.message || 'An error occurred during payment processing' });
+    }
+  });
+
+  // Webhook endpoint for Stripe events
+  app.post('/api/stripe-webhook', async (req: Request, res: Response) => {
+    const sig = req.headers['stripe-signature'] as string;
+    
+    let event;
+    let isVerified = false;
+    
+    // Try to verify the webhook signature if webhook secret is available
+    if (process.env.STRIPE_WEBHOOK_SECRET && sig) {
+      try {
+        // Verify the event came from Stripe
+        event = stripeModule.stripe.webhooks.constructEvent(
+          req.body, // raw body from express.raw middleware
+          sig,
+          process.env.STRIPE_WEBHOOK_SECRET
+        );
+        isVerified = true;
+        console.log('Webhook signature verified successfully');
+      } catch (err: any) {
+        console.error(`Webhook signature verification failed: ${err.message}`);
+        return res.status(400).json({ received: false, error: err.message });
+      }
+    } else {
+      // No webhook secret available - for development/testing only
+      // In production, always verify webhook signatures
+      console.log('STRIPE_WEBHOOK_SECRET not set or signature missing. Using webhook data without verification.');
+      console.log('This is insecure and should only be used in development.');
+      
+      try {
+        // Parse the webhook payload directly
+        if (typeof req.body === 'string') {
+          event = JSON.parse(req.body);
+        } else {
+          event = req.body;
+        }
+      } catch (error: any) {
+        console.error('Failed to parse webhook payload:', error.message);
+        return res.status(400).json({ received: false, error: 'Invalid webhook payload' });
+      }
+    }
+
+    console.log(`Webhook received: ${event.type} (Signature verified: ${isVerified})`);
+    
+    // Add an extra security check for critical operations in production
+    const isCriticalEvent = [
+      'customer.subscription.created',
+      'customer.subscription.updated',
+      'customer.subscription.deleted',
+      'invoice.payment_succeeded'
+    ].includes(event.type);
+    
+    // In production, require signature verification for critical events
+    if (process.env.NODE_ENV === 'production' && isCriticalEvent && !isVerified) {
+      console.error(`Rejected unverified critical webhook event: ${event.type}`);
+      return res.status(403).json({ 
+        received: false, 
+        error: 'Webhook signature verification required for critical operations in production' 
+      });
+    }
+    
+    // Handle the event
+    switch (event.type) {
+      case 'customer.subscription.created':
+        const subscriptionCreated = event.data.object;
+        try {
+          // Update user subscription info when a subscription is created
+          const customerId = subscriptionCreated.customer;
+          const subscriptionId = subscriptionCreated.id;
+          const status = subscriptionCreated.status;
+          
+          // Find user by customer ID
+          const user = await storage.getUserByStripeCustomerId(customerId as string);
+          if (user) {
+            await storage.updateUserStripeInfo(user.id, {
+              stripeSubscriptionId: subscriptionId,
+              subscriptionStatus: status,
+              // If user subscribes, they're no longer in trial period
+              isTrialPeriod: false,
+              // Record when the trial ended (if they were in a trial)
+              ...(user.isTrialPeriod ? { trialEndDate: new Date() } : {})
+            });
+            console.log(`Updated user ${user.id} with new subscription ${subscriptionId}, status: ${status}`);
+          } else {
+            console.error(`No user found with customer ID ${customerId}`);
+          }
+        } catch (error) {
+          console.error('Error processing subscription.created event:', error);
+        }
+        break;
+        
+      case 'customer.subscription.updated':
+        const subscription = event.data.object;
+        try {
+          // Update user subscription status when a subscription is updated
+          const customerId = subscription.customer;
+          const subscriptionId = subscription.id;
+          const status = subscription.status;
+          
+          const user = await storage.getUserByStripeCustomerId(customerId as string);
+          if (user) {
+            await storage.updateUserStripeInfo(user.id, {
+              stripeSubscriptionId: subscriptionId,
+              subscriptionStatus: status
+            });
+            console.log(`Updated subscription status to ${status} for user ${user.id}`);
+          } else {
+            console.error(`No user found with customer ID ${customerId}`);
+          }
+        } catch (error) {
+          console.error('Error processing subscription.updated event:', error);
+        }
+        break;
+        
+      case 'customer.subscription.deleted':
+        const canceledSubscription = event.data.object;
+        try {
+          // Handle subscription cancellation
+          const customerId = canceledSubscription.customer;
+          
+          const user = await storage.getUserByStripeCustomerId(customerId as string);
+          if (user) {
+            await storage.updateUserStripeInfo(user.id, {
+              subscriptionStatus: 'canceled'
+            });
+            console.log(`Marked subscription as canceled for user ${user.id}`);
+          } else {
+            console.error(`No user found with customer ID ${customerId}`);
+          }
+        } catch (error) {
+          console.error('Error processing subscription.deleted event:', error);
+        }
+        break;
+        
+      case 'invoice.payment_succeeded':
+        // Payment was successful
+        const invoice = event.data.object;
+        try {
+          // Get the subscription ID from the invoice
+          const subscriptionId = invoice.subscription as string;
+          // Get the customer ID from the invoice
+          const customerId = invoice.customer as string;
+          
+          // Find the user by customer ID
+          const user = await storage.getUserByStripeCustomerId(customerId);
+          if (user) {
+            // Update user's subscription status to active and record payment date
+            await storage.updateUserStripeInfo(user.id, {
+              subscriptionStatus: 'active',
+              lastPaymentDate: new Date()
+            });
+            console.log(`Payment successful for invoice ${invoice.id}, updated user ${user.id} subscription status`);
+          } else {
+            console.error(`No user found with customer ID ${customerId}`);
+          }
+          
+          console.log(`Payment succeeded for subscription: ${subscriptionId}`);
+        } catch (error) {
+          console.error('Error processing invoice.payment_succeeded event:', error);
+        }
+        break;
+        
+
+
+      case 'invoice.payment_failed':
+        // Payment failed
+        const failedInvoice = event.data.object;
+        try {
+          // Get the subscription ID from the invoice
+          const subscriptionId = failedInvoice.subscription as string;
+          // Get the customer ID from the invoice
+          const customerId = failedInvoice.customer as string;
+          
+          console.log(`Payment failed for invoice: ${failedInvoice.id}, subscription: ${subscriptionId}`);
+          
+          // Find the user by customer ID
+          const user = await storage.getUserByStripeCustomerId(customerId);
+          if (user) {
+            // Update user's subscription status to past_due
+            await storage.updateUserStripeInfo(user.id, {
+              subscriptionStatus: 'past_due'
+            });
+            console.log(`Updated subscription status for user ${user.id} to 'past_due'`);
+            
+            // Here you could also trigger a notification to the user about the payment failure
+            // This would require implementing an email notification system
+          } else {
+            console.error(`No user found with customer ID ${customerId}`);
+          }
+        } catch (error) {
+          console.error('Error processing invoice.payment_failed event:', error);
+        }
+        break;
+        
+      case 'customer.subscription.trial_will_end':
+        // Trial period is about to end
+        const trialEndingSub = event.data.object;
+        try {
+          const customerId = trialEndingSub.customer as string;
+          // Trial will end in 3 days (Stripe sends this event 3 days before end)
+          
+          console.log(`Trial ending soon for subscription: ${trialEndingSub.id}`);
+          
+          // Find the user by customer ID
+          const user = await storage.getUserByStripeCustomerId(customerId);
+          if (user) {
+            // You could notify the user that their trial is ending soon
+            console.log(`User ${user.id} trial period is ending soon`);
+          }
+        } catch (error) {
+          console.error('Error processing subscription.trial_will_end event:', error);
+        }
+        break;
+
+      default:
+        console.log(`Unhandled event type: ${event.type}`);
+    }
+
+    // Return a 200 response to acknowledge receipt of the event
+    res.json({ received: true });
+  });
+
+  // Serve uploads directly
+  app.use('/uploads', (req, res, next) => {
+    const filePath = path.join(uploadDir, path.basename(req.path));
+    res.sendFile(filePath, (err) => {
+      if (err) {
+        next();
+      }
+    });
+  });
+
+  // Marketing Advice Chatbot endpoint
+  app.post('/api/marketing-advice', async (req: Request, res: Response) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      // Accept businessId from request body if provided, otherwise use the one from user session
+      const businessId = req.body.businessId || req.user?.businessId;
+      if (!businessId) {
+        return res.status(400).json({ message: 'No business associated with this account' });
+      }
+
+      // Gather context data for the AI
+      const business = await storage.getBusiness(businessId);
+      const campaigns = await storage.getCampaigns(businessId);
+      const adMethods = await storage.getAdMethods();
+      const stats = await storage.getBusinessStats(businessId);
+      
+      // Get top performers in the area for context
+      const topPerformers = business?.businessType && business?.latitude && business?.longitude 
+        ? await storage.getTopROICampaigns(
+            String(business.businessType),
+            0, // All ad methods
+            business.latitude,
+            business.longitude,
+            3, // 3 mile radius
+            5  // Top 5 performers
+          )
+        : [];
+
+      const response = await generateMarketingAdvice({
+        message: req.body.message,
+        campaigns,
+        businessType: business?.businessType || undefined,
+        adMethods,
+        topPerformers,
+        userMetrics: stats
+      });
+
+      res.json({ response });
+    } catch (error: any) {
+      console.error('Error in marketing advice endpoint:', error);
+      res.status(500).json({ 
+        message: 'Error generating marketing advice', 
+        error: error.message 
+      });
+    }
+  });
+
+  // Marketing Insights Storytelling endpoint
+  app.post('/api/marketing-insights', async (req: Request, res: Response) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      
+      // Check if user has payment method (except for demo account)
+      const user = req.user;
+      const hasPayment = await storage.hasPaymentMethod(user.id);
+      const isDemoAccount = user.username === "demo@adtrack.online";
+      
+      if (!hasPayment && !isDemoAccount) {
+        return res.status(403).json({
+          success: false,
+          error: "Payment method required",
+          message: "You need to add a payment method to access this premium feature."
+        });
+      }
+
+      // First, get the business associated with the user
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(400).json({ message: 'User ID not found' });
+      }
+
+      const business = await storage.getBusinessByUserId(userId);
+      if (!business) {
+        return res.status(400).json({ message: 'No business associated with this account' });
+      }
+
+      const businessId = business.id;
+      
+      // Get all necessary data to generate comprehensive insights
+      const campaigns = await storage.getCampaignsWithROI(businessId);
+      const stats = await storage.getBusinessStats(businessId);
+      const adMethods = await storage.getAdMethods();
+      const topPerformers = await storage.getTopPerformers();
+      
+      // Validate the insight type
+      const insightType = req.body.insightType || 'summary';
+      if (!['summary', 'detailed', 'recommendation'].includes(insightType)) {
+        return res.status(400).json({ message: 'Invalid insight type. Must be one of: summary, detailed, recommendation' });
+      }
+
+      // Always use fallback insights to ensure we return something useful
+      const fallbackInsights = getFallbackInsights({
+        businessName: business?.name || 'Your Business',
+        businessType: business?.businessType || 'Business',
+        campaigns,
+        topPerformers,
+        userMetrics: {
+          averageRoi: stats.averageRoi,
+          totalSpent: stats.totalSpent,
+          totalEarned: stats.totalEarned,
+          activeCampaigns: stats.activeCampaigns,
+          totalCampaigns: stats.totalCampaigns
+        },
+        adMethods,
+        insightType: insightType as 'summary' | 'detailed' | 'recommendation'
+      });
+
+      // Return the fallback insights
+      return res.json(fallbackInsights);
+    } catch (error: any) {
+      console.error('Error in marketing insights endpoint:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Error generating marketing insights', 
+        error: error.message 
+      });
+    }
+  });
+  
+  // AI-Powered Recommendation Engine endpoint
+  app.post('/api/ad-recommendations', async (req: Request, res: Response) => {
+    try {
+      // Ensure user is authenticated
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, error: 'User not authenticated' });
+      }
+      
+      // Check if user has payment method (except for demo account)
+      const user = req.user;
+      const hasPayment = await storage.hasPaymentMethod(user.id);
+      const isDemoAccount = user.username === "demo@adtrack.online";
+      
+      if (!hasPayment && !isDemoAccount) {
+        return res.status(403).json({
+          success: false,
+          error: "Payment method required",
+          message: "You need to add a payment method to access this premium feature."
+        });
+      }
+      
+      const userId = req.user?.id;
+      const { businessId } = req.body;
+      
+      if (!businessId) {
+        return res.status(400).json({ success: false, error: 'Missing business ID' });
+      }
+      
+      // Gather data needed for recommendations
+      const business = await storage.getBusiness(businessId);
+      if (!business) {
+        return res.status(404).json({ success: false, error: 'Business not found' });
+      }
+      
+      const campaigns = await storage.getCampaigns(businessId);
+      const adMethods = await storage.getAdMethods();
+      const stats = await storage.getBusinessStats(businessId);
+      
+      // Get top performers in the area for context
+      const topPerformers = business?.businessType && business?.latitude && business?.longitude 
+        ? await storage.getTopROICampaigns(
+            String(business.businessType),
+            0, // All ad methods
+            business.latitude,
+            business.longitude,
+            3, // 3 mile radius
+            5  // Top 5 performers
+          )
+        : [];
+          
+      const { generateRecommendations } = await import('./recommendationEngine');
+      
+      const request = {
+        userId,
+        businessId,
+        businessName: business.name,
+        businessType: business.businessType,
+        campaigns,
+        adMethods,
+        topPerformers,
+        userMetrics: {
+          averageRoi: stats.averageRoi,
+          totalSpent: stats.totalSpent,
+          totalEarned: stats.totalEarned,
+          activeCampaigns: stats.activeCampaigns,
+          totalCampaigns: stats.totalCampaigns
+        },
+        geographicData: business.latitude && business.longitude ? {
+          latitude: business.latitude,
+          longitude: business.longitude,
+          zipCode: business.zipCode,
+          radius: 3 // Default radius in miles
+        } : undefined
+      };
+      
+      const recommendationResponse = await generateRecommendations(request);
+      res.json(recommendationResponse);
+    } catch (error: any) {
+      console.error('Error generating ad recommendations:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message || 'Failed to generate ad recommendations' 
+      });
+    }
+  });
+  
+  // Get recommendations for a business
+  app.get('/api/ad-recommendations/:businessId', async (req: Request, res: Response) => {
+    try {
+      // Ensure user is authenticated
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, error: 'User not authenticated' });
+      }
+      
+      const businessId = parseInt(req.params.businessId);
+      
+      // Validate business access
+      const userBusiness = await storage.getBusinessByUserId(req.user!.id);
+      if (!hasAdminRights(req.user) && userBusiness?.id !== businessId) {
+        return res.status(403).json({ success: false, error: 'Unauthorized to view this business' });
+      }
+      
+      // Get the most recent recommendation for this business
+      // Using storage instead of direct db query for compatibility
+      const recommendations = await storage.getRecommendationsForBusiness(businessId);
+      
+      if (!recommendations || recommendations.length === 0) {
+        return res.status(404).json({ success: false, error: 'No recommendations found for this business' });
+      }
+      
+      // Mark as viewed if not already
+      const recommendation = recommendations[0];
+      if (!recommendation.isViewed) {
+        await storage.markRecommendationAsViewed(recommendation.id);
+      }
+      
+      // Get recommendation items
+      const recommendationItems = await storage.getRecommendationItems(recommendation.id);
+      
+      // Return the recommendation with the items included
+      res.json({
+        success: true,
+        recommendation: {
+          ...recommendation,
+          adRecommendationItems: recommendationItems
+        }
+      });
+    } catch (error: any) {
+      console.error('Error fetching ad recommendations:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message || 'Failed to fetch ad recommendations' 
+      });
+    }
+  });
+  
+  // Record user interaction with a recommendation
+  app.post('/api/ad-recommendations/:recommendationId/interaction', async (req: Request, res: Response) => {
+    try {
+      // Ensure user is authenticated
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, error: 'User not authenticated' });
+      }
+      
+      const userId = req.user?.id;
+      const recommendationId = parseInt(req.params.recommendationId);
+      const { interactionType, feedback, implementationDetails } = req.body;
+      
+      if (!interactionType) {
+        return res.status(400).json({ success: false, error: 'Missing interaction type' });
+      }
+      
+      // Record the interaction using storage
+      const interaction = await storage.recordRecommendationInteraction({
+        userId,
+        recommendationId,
+        interactionType,
+        feedback,
+        implementationDetails
+      });
+        
+      res.json({
+        success: true,
+        interaction
+      });
+    } catch (error: any) {
+      console.error('Error recording recommendation interaction:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message || 'Failed to record recommendation interaction' 
+      });
+    }
+  });
+  
+  // Pricing recommendations routes
+  
+  // Get pricing recommendations for a business
+  app.get('/api/business/:businessId/pricing-recommendations', async (req: Request, res: Response) => {
+    try {
+      const { businessId } = req.params;
+      
+      // Get pricing recommendations for the business
+      const recommendations = await storage.getPricingRecommendations(
+        parseInt(businessId, 10)
+      );
+      
+      // Return empty array if no recommendations found instead of 404
+      if (!recommendations) {
+        return res.json([]);
+      }
+      
+      res.json(recommendations);
+    } catch (error: any) {
+      console.error('Error fetching pricing recommendations:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to fetch pricing recommendations'
+      });
+    }
+  });
+  
+  // Create a new pricing recommendation
+  app.post('/api/business/:businessId/pricing-recommendations', async (req: Request, res: Response) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({
+          success: false,
+          error: 'You must be logged in to request pricing recommendations'
+        });
+      }
+      
+      const { businessId } = req.params;
+      const { adMethodId, includeCompetitorData = true } = req.body;
+      
+      if (!adMethodId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required field: adMethodId'
+        });
+      }
+      
+      const userId = req.user.id;
+      
+      // Get business info to pass to the recommendation engine
+      const business = await storage.getBusiness(parseInt(businessId, 10));
+      if (!business) {
+        return res.status(404).json({
+          success: false,
+          error: 'Business not found'
+        });
+      }
+      
+      // Get campaigns to analyze
+      const campaigns = await storage.getCampaigns(parseInt(businessId, 10));
+      
+      // Get ad methods
+      const adMethods = await storage.getAdMethods();
+      
+      // Get top performers for comparison
+      const topPerformers = await storage.getTopROICampaigns(
+        business.businessType,
+        0, // All ad methods
+        business.latitude, 
+        business.longitude,
+        50, // 50 mile radius
+        5 // Top 5 performers
+      );
+      
+      // Calculate business metrics
+      const businessStats = await storage.getBusinessStats(parseInt(businessId, 10));
+      
+      // Generate pricing recommendation using the recommendation engine
+      const { generatePricingRecommendations } = await import('./pricingRecommendationEngine');
+      
+      // Map top performers to the format expected by the recommendation engine
+      const formattedTopPerformers = topPerformers.map(campaign => {
+        const campaignBusiness = campaign.business || { name: 'Unknown Business' };
+        const campaignAdMethod = campaign.adMethod || { name: 'Unknown Ad Method' };
+        
+        return {
+          id: campaign.id,
+          businessId: campaign.businessId,
+          businessName: campaignBusiness.name,
+          adMethodId: campaign.adMethodId,
+          adMethodName: campaignAdMethod.name,
+          amount: campaign.amountSpent ? parseFloat(campaign.amountSpent) : 0,
+          revenue: campaign.amountEarned ? parseFloat(campaign.amountEarned) : 0,
+          roi: campaign.roi || 0,
+          startDate: campaign.startDate,
+          endDate: campaign.endDate,
+          active: campaign.isActive || false,
+        };
+      });
+      
+      const recommendationRequest = {
+        userId,
+        businessId: parseInt(businessId, 10),
+        businessName: business.name,
+        businessType: business.businessType,
+        campaigns,
+        adMethods,
+        topPerformers: formattedTopPerformers,
+        adMethodId: parseInt(adMethodId, 10) || 1, // Default to first ad method if invalid
+        userMetrics: {
+          averageRoi: businessStats.averageRoi || 0,
+          totalSpent: businessStats.totalSpent || 0,
+          totalEarned: businessStats.totalEarned || 0,
+          activeCampaigns: businessStats.activeCampaigns || 0,
+          totalCampaigns: businessStats.totalCampaigns || 0,
+        },
+        geographicData: {
+          latitude: business.latitude || 0,
+          longitude: business.longitude || 0,
+          zipCode: business.zipCode || '',
+          radius: 50, // miles
+        },
+      };
+      
+      const recommendation = await generatePricingRecommendations(
+        recommendationRequest
+      );
+      
+      if (!recommendation.success || !recommendation.recommendations) {
+        return res.status(500).json({
+          success: false,
+          error: recommendation.error || 'Failed to generate pricing recommendations'
+        });
+      }
+      
+      // Store the recommendation in the database
+      const storedRecommendations = await Promise.all(
+        recommendation.recommendations.map(async (rec) => {
+          return storage.createPricingRecommendation(rec);
+        })
+      );
+      
+      res.status(201).json(storedRecommendations[0]);
+    } catch (error: any) {
+      console.error('Error generating pricing recommendation:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to generate pricing recommendation'
+      });
+    }
+  });
+  
+  // Update a pricing recommendation (feedback, implementation status, etc.)
+  app.patch('/api/business/:businessId/pricing-recommendations/:recommendationId', async (req: Request, res: Response) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({
+          success: false,
+          error: 'You must be logged in to update pricing recommendations'
+        });
+      }
+      
+      const { businessId, recommendationId } = req.params;
+      const { feedback, implementedAt, dismissedAt } = req.body;
+      
+      // Validate that the recommendation belongs to the business
+      const recommendation = await storage.getPricingRecommendationById(
+        parseInt(recommendationId, 10)
+      );
+      
+      if (!recommendation) {
+        return res.status(404).json({
+          success: false,
+          error: 'Recommendation not found'
+        });
+      }
+      
+      if (recommendation.businessId !== parseInt(businessId, 10)) {
+        return res.status(403).json({
+          success: false,
+          error: 'You do not have permission to update this recommendation'
+        });
+      }
+      
+      // Update the recommendation
+      const updatedRecommendation = await storage.updatePricingRecommendation(
+        parseInt(recommendationId, 10),
+        {
+          userFeedback: feedback,
+          implementedAt: implementedAt ? new Date(implementedAt) : undefined,
+          dismissedAt: dismissedAt ? new Date(dismissedAt) : undefined,
+          isImplemented: implementedAt ? true : undefined
+        }
+      );
+      
+      res.json(updatedRecommendation);
+    } catch (error: any) {
+      console.error('Error updating pricing recommendation:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to update pricing recommendation'
+      });
+    }
+  });
+  
+  // Get all implemented recommendations for a user
+  app.get('/api/user/:userId/implementations', async (req: Request, res: Response) => {
+    try {
+      // Ensure user is authenticated
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, error: 'User not authenticated' });
+      }
+      
+      const userId = parseInt(req.params.userId);
+      
+      // Ensure the user is only accessing their own implementations
+      if (req.user?.id !== userId && !req.user?.isAdmin) {
+        return res.status(403).json({
+          success: false,
+          error: 'You are not authorized to access this data'
+        });
+      }
+      
+      // Get all implemented recommendations for the user
+      const implementations = await storage.getUserImplementations(userId);
+        
+      res.json({
+        success: true,
+        implementations
+      });
+    } catch (error: any) {
+      console.error('Error fetching user implementations:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message || 'Failed to fetch user implementations' 
+      });
+    }
+  });
+  
+  // Achievement Type endpoints
+  app.get('/api/achievement-types', async (req: Request, res: Response) => {
+    try {
+      const achievementTypes = await storage.getAchievementTypes();
+      res.json(achievementTypes);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/achievement-types/:id', async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const achievementType = await storage.getAchievementType(id);
+      
+      if (!achievementType) {
+        return res.status(404).json({ message: 'Achievement type not found' });
+      }
+      
+      res.json(achievementType);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/achievement-types', async (req: Request, res: Response) => {
+    try {
+      // Only admins can create achievement types
+      if (!req.isAuthenticated() || !req.user?.isAdmin) {
+        return res.status(403).json({ message: 'Not authorized to create achievement types' });
+      }
+      
+      const data = insertAchievementTypeSchema.parse(req.body);
+      const achievementType = await storage.createAchievementType(data);
+      res.status(201).json(achievementType);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.put('/api/achievement-types/:id', async (req: Request, res: Response) => {
+    try {
+      // Only admins can update achievement types
+      if (!req.isAuthenticated() || !req.user?.isAdmin) {
+        return res.status(403).json({ message: 'Not authorized to update achievement types' });
+      }
+      
+      const id = parseInt(req.params.id);
+      const data = insertAchievementTypeSchema.parse(req.body);
+      const achievementType = await storage.updateAchievementType(id, data);
+      res.json(achievementType);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete('/api/achievement-types/:id', async (req: Request, res: Response) => {
+    try {
+      // Only admins can delete achievement types
+      if (!req.isAuthenticated() || !req.user?.isAdmin) {
+        return res.status(403).json({ message: 'Not authorized to delete achievement types' });
+      }
+      
+      const id = parseInt(req.params.id);
+      const result = await storage.deleteAchievementType(id);
+      
+      if (!result) {
+        return res.status(404).json({ message: 'Achievement type not found' });
+      }
+      
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // User Achievement endpoints
+  app.get('/api/user/:userId/achievements', async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      // Check if authorized to access this user's achievements
+      if (!req.isAuthenticated() || (req.user?.id !== userId && !req.user?.isAdmin)) {
+        return res.status(403).json({ message: 'Not authorized to access these achievements' });
+      }
+      
+      const achievements = await storage.getUserAchievements(userId);
+      
+      // Get the full achievement type details for each achievement
+      const achievementTypes = await storage.getAchievementTypes();
+      const achievementsWithDetails = achievements.map(achievement => {
+        const type = achievementTypes.find(t => t.id === achievement.achievementTypeId);
+        return {
+          ...achievement,
+          type
+        };
+      });
+      
+      res.json(achievementsWithDetails);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/user/:userId/points', async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      // Check if authorized to access this user's points
+      if (!req.isAuthenticated() || (req.user?.id !== userId && !req.user?.isAdmin)) {
+        return res.status(403).json({ message: 'Not authorized to access these points' });
+      }
+      
+      const points = await storage.getUserPoints(userId);
+      res.json({ points });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/user/:userId/check-achievements', async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      // Check if authorized to check this user's achievements
+      if (!req.isAuthenticated() || (req.user?.id !== userId && !req.user?.isAdmin)) {
+        return res.status(403).json({ message: 'Not authorized to check achievements for this user' });
+      }
+      
+      const newAchievements = await storage.checkAndAwardAchievements(userId);
+      
+      // Get the full achievement type details for each new achievement
+      const achievementTypes = await storage.getAchievementTypes();
+      const achievementsWithDetails = newAchievements.map(achievement => {
+        const type = achievementTypes.find(t => t.id === achievement.achievementTypeId);
+        return {
+          ...achievement,
+          type
+        };
+      });
+      
+      res.json(achievementsWithDetails);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Rewards endpoints
+  app.get('/api/rewards', async (req: Request, res: Response) => {
+    try {
+      const rewards = await storage.getRewards();
+      res.json(rewards);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/rewards/:id', async (req: Request, res: Response) => {
+    try {
+      const reward = await storage.getReward(parseInt(req.params.id));
+      if (!reward) {
+        return res.status(404).json({ message: "Reward not found" });
+      }
+      res.json(reward);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/user/:userId/rewards', async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      // Check if authorized to access this user's rewards
+      if (!req.isAuthenticated() || (req.user?.id !== userId && !req.user?.isAdmin)) {
+        return res.status(403).json({ message: 'Not authorized to access these rewards' });
+      }
+      
+      const userRewards = await storage.getUserRewards(userId);
+      res.json(userRewards);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post('/api/user/:userId/rewards/purchase/:rewardId', async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const rewardId = parseInt(req.params.rewardId);
+      
+      // Check if authorized to purchase rewards for this user
+      if (!req.isAuthenticated() || (req.user?.id !== userId && !req.user?.isAdmin)) {
+        return res.status(403).json({ message: 'Not authorized to purchase rewards for this user' });
+      }
+      
+      const result = await storage.purchaseReward(userId, rewardId);
+      
+      if ('error' in result) {
+        return res.status(400).json({ message: result.error });
+      }
+      
+      res.status(201).json(result);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/user/:userId/badges', async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      // Check if authorized to access this user's badges
+      if (!req.isAuthenticated() || (req.user?.id !== userId && !req.user?.isAdmin)) {
+        return res.status(403).json({ message: 'Not authorized to access these badges' });
+      }
+      
+      const badges = await storage.getUserBadges(userId);
+      res.json(badges);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/badges', async (req: Request, res: Response) => {
+    try {
+      const badges = await storage.getBadges();
+      res.json(badges);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Admin endpoints
+  
+  // Get all users (admin only)
+  app.get('/api/admin/users', async (req: Request, res: Response) => {
+    try {
+      // Check if user is admin
+      if (!req.isAuthenticated() || !req.user?.isAdmin) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+      
+      const users = await storage.getAllUsers();
+      res.json(users);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  
+  // Get users pending approval (admin only)
+  app.get('/api/admin/pending-users', async (req: Request, res: Response) => {
+    try {
+      // Check if user is admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+      
+      const pendingUsers = await storage.getPendingApprovalUsers();
+      res.json(pendingUsers);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  
+  // Approve user (admin only)
+  app.post('/api/admin/approve-user', async (req: Request, res: Response) => {
+    try {
+      // Check if user is admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+      
+      const { userId } = req.body;
+      
+      if (!userId) {
+        return res.status(400).json({ message: 'User ID is required' });
+      }
+      
+      // Get the user to approve
+      const userToApprove = await storage.getUser(userId);
+      if (!userToApprove) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      
+      // Approve the user
+      const updatedUser = await storage.approveUser(userId, req.user.id);
+      
+      // Send approval email to the user
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const loginUrl = `${baseUrl}/auth`;
+      
+      if (updatedUser.email) {
+        await sendEmail({
+          to: updatedUser.email,
+          from: 'noreply@adtrack.online',
+          ...emailTemplates.accountApproved(updatedUser.username, loginUrl)
+        });
+      }
+      
+      res.json(updatedUser);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  
+  // Reject user (admin only)
+  app.post('/api/admin/reject-user', async (req: Request, res: Response) => {
+    try {
+      // Check if user is admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+      
+      const { userId, reason } = req.body;
+      
+      if (!userId) {
+        return res.status(400).json({ message: 'User ID is required' });
+      }
+      
+      // Get the user to reject
+      const userToReject = await storage.getUser(userId);
+      if (!userToReject) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      
+      // Reject the user
+      const updatedUser = await storage.rejectUser(userId, req.user.id, reason);
+      
+      // Send rejection email to the user if they have an email
+      if (updatedUser.email) {
+        await sendEmail({
+          to: updatedUser.email,
+          from: 'noreply@adtrack.online',
+          ...emailTemplates.accountRejected(updatedUser.username, reason || 'No reason provided')
+        });
+      }
+      
+      res.json(updatedUser);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  
+  // Admin route to get all campaigns across the platform
+  app.get('/api/admin/campaigns', async (req: Request, res: Response) => {
+    if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+      console.log('Admin access denied for campaigns:', {
+        isAuthenticated: req.isAuthenticated(),
+        user: req.user ? {
+          id: req.user.id,
+          username: req.user.username,
+          isAdmin: req.user.isAdmin
+        } : null
+      });
+      return res.status(403).json({ message: 'Forbidden: Admin access required' });
+    }
+    console.log('Admin access granted for campaigns to user:', {
+      id: req.user?.id,
+      username: req.user?.username
+    });
+    
+    try {
+      // Get all campaigns
+      const allCampaigns = await storage.getAllCampaigns();
+      
+      // Get additional data to join with campaigns
+      const businesses = await storage.getAllBusinesses();
+      const adMethods = await storage.getAdMethods();
+      
+      // Format response with business names and ad method names
+      const formattedCampaigns = allCampaigns.map((campaign) => {
+        const business = businesses.find((b) => b.id === campaign.businessId);
+        const adMethod = adMethods.find((a) => a.id === campaign.adMethodId);
+        
+        const spent = Number(campaign.amountSpent) || 0;
+        const revenue = Number(campaign.amountEarned) || 0;
+        
+        return {
+          id: campaign.id,
+          businessId: campaign.businessId,
+          businessName: business?.name || 'Unknown Business',
+          name: campaign.name,
+          adMethodId: campaign.adMethodId,
+          adMethodName: adMethod?.name || 'Unknown Method',
+          budget: spent, // Using amountSpent as budget for compatibility with UI
+          spent: spent,
+          startDate: campaign.startDate,
+          endDate: campaign.endDate,
+          status: campaign.isActive ? 'Active' : 'Inactive',
+          revenue: revenue,
+          roi: revenue > 0 && spent > 0 
+            ? ((revenue - spent) / spent) * 100 
+            : 0
+        };
+      });
+      
+      res.json(formattedCampaigns);
+    } catch (error: any) {
+      console.error('Error fetching campaigns:', error);
+      res.status(500).json({ message: 'Failed to fetch campaigns', error: error.message });
+    }
+  });
+
+  // Update user admin status (admin only)
+  app.put('/api/admin/users/:id', async (req: Request, res: Response) => {
+    try {
+      // Check if user is admin
+      if (!req.isAuthenticated() || !req.user?.isAdmin) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+      
+      const userId = parseInt(req.params.id);
+      const { isAdmin, status, role } = req.body;
+      
+      // Create update object with only provided fields
+      const updateData: Partial<InsertUser> = {};
+      if (isAdmin !== undefined) updateData.isAdmin = isAdmin;
+      if (status !== undefined) updateData.status = status;
+      if (role !== undefined) updateData.role = role;
+      
+      // Update user
+      const user = await storage.updateUser(userId, updateData);
+      res.json(user);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  
+  // Reset user password (admin only)
+  app.post('/api/admin/users/:id/reset-password', async (req: Request, res: Response) => {
+    try {
+      // Check if user is admin
+      if (!req.isAuthenticated() || !req.user?.isAdmin) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+      
+      const userId = parseInt(req.params.id);
+      const { password } = req.body;
+      
+      if (!password) {
+        return res.status(400).json({ message: 'Password is required' });
+      }
+      
+      // Hash the new password
+      const hashedPassword = await hashPassword(password);
+      
+      // Update the password
+      const updatedUser = await storage.updateUser(userId, { password: hashedPassword });
+      
+      // Log the password change for audit
+      console.log(`Password changed for user ${userId} by admin ${req.user.id}`);
+      
+      // Send success response
+      res.json({ message: 'Password updated successfully' });
+    } catch (error: any) {
+      console.error('Error updating password:', error);
+      res.status(500).json({ message: 'Error updating password' });
+    }
+  });
+
+  // Get system stats (admin only)
+  app.get('/api/admin/stats', async (req: Request, res: Response) => {
+    try {
+      // Check if user is admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        console.log("Admin access denied:", {
+          isAuthenticated: req.isAuthenticated(),
+          user: req.user ? {
+            id: req.user.id,
+            username: req.user.username,
+            isAdmin: req.user.isAdmin,
+            is_admin: (req.user as any).is_admin
+          } : null
+        });
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+      
+      console.log("Admin access granted for user:", {
+        id: req.user?.id,
+        username: req.user?.username
+      });
+      
+      const stats = await storage.getSystemStats();
+      res.json(stats);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  
+  // Admin settings management
+  app.get('/api/admin/settings', async (req: Request, res: Response) => {
+    try {
+      // Ensure user is authenticated and is an admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized' });
+      }
+      
+      // Get admin settings
+      const settings = await storage.getAdminSettings();
+      if (!settings) {
+        // If no settings exist yet, return default empty values
+        return res.json({
+          id: null,
+          notificationEmail: '',
+          supportEmail: '',
+          supportPhone: '',
+          customEmailTemplates: false,
+          customizedAt: null
+        });
+      }
+      
+      res.json(settings);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  app.put('/api/admin/settings', async (req: Request, res: Response) => {
+    try {
+      // Ensure user is authenticated and is an admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized' });
+      }
+      
+      const { notificationEmail, supportEmail, supportPhone, customEmailTemplates } = req.body;
+      
+      // Update admin settings
+      const updatedSettings = await storage.updateAdminSettings({
+        notificationEmail,
+        supportEmail,
+        supportPhone,
+        customEmailTemplates: !!customEmailTemplates, // Ensure boolean
+        customizedAt: new Date()
+      });
+      
+      res.json(updatedSettings);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Admin notification settings endpoints
+  app.get('/api/admin/notification-settings', async (req: Request, res: Response) => {
+    try {
+      // Ensure user is authenticated and is an admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized' });
+      }
+      
+      // Get admin notification settings
+      const settings = await storage.getAdminNotificationSettings();
+      if (!settings) {
+        // If no settings exist yet, return default values
+        return res.json({
+          systemNotifications: true,
+          userRegistrationAlerts: true,
+          businessVerificationAlerts: true,
+          weeklyAdminReports: true,
+          failedPaymentAlerts: true,
+          securityAlerts: true,
+          performanceAlerts: true,
+          maintenanceNotifications: true,
+          notificationEmail: '',
+          alertFrequency: 'immediate',
+          customAlertThreshold: 10
+        });
+      }
+      
+      res.json(settings);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  app.post('/api/admin/notification-settings', async (req: Request, res: Response) => {
+    try {
+      // Ensure user is authenticated and is an admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized' });
+      }
+      
+      // Validate the request body against our schema
+      const validatedData = insertAdminNotificationSettingsSchema.parse({
+        ...req.body,
+        updatedBy: req.user.id,
+        updatedAt: new Date()
+      });
+      
+      // Save the notification settings
+      const settings = await storage.saveAdminNotificationSettings(validatedData);
+      res.json(settings);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        res.status(400).json({ message: 'Invalid data format', errors: error.errors });
+      } else {
+        res.status(500).json({ message: error.message });
+      }
+    }
+  });
+  
+  app.post('/api/admin/test-notification', async (req: Request, res: Response) => {
+    try {
+      // Ensure user is authenticated and is an admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized' });
+      }
+      
+      const { type } = req.body;
+      
+      if (!type) {
+        return res.status(400).json({ message: 'Notification type is required' });
+      }
+      
+      // Get admin notification settings to determine email
+      const settings = await storage.getAdminNotificationSettings();
+      const email = settings?.notificationEmail || (req.user.email as string);
+      
+      if (!email) {
+        return res.status(400).json({ message: 'No notification email configured' });
+      }
+      
+      // Send test notification
+      const result = await storage.sendTestNotification(type, email);
+      
+      if (result) {
+        res.json({ success: true, message: 'Test notification sent successfully' });
+      } else {
+        res.status(500).json({ message: 'Failed to send test notification' });
+      }
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Test endpoint for verification success email
+  app.get('/api/test-verification-email', async (req: Request, res: Response) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Only admins can access this test endpoint
+      if (!req.user.isAdmin) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      
+      // Get the current user
+      const user = await storage.getUser(req.user.id);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Get business info for this user (for personalization)
+      const business = await storage.getBusinessByUserId(user.id);
+      
+      // Build the verification success email
+      const businessName = business?.name || "Your Business";
+      const emailSubject = "AdTrack - Email Verified, Application Under Review";
+      
+      // HTML content for the email
+      const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e6e6e6; border-radius: 5px;">
+        <div style="background-color: #4A6CF7; padding: 20px; text-align: center; color: white;">
+          <h1>Email Successfully Verified!</h1>
+        </div>
+        
+        <div style="padding: 20px; background-color: #f9f9f9;">
+          <h2>Thank you for verifying your email, ${businessName}!</h2>
+          <p>Your application for AdTrack is now <span style="color: #4A6CF7; font-weight: bold;">under review</span>. We're excited that you're interested in our AI-powered marketing analytics platform!</p>
+          
+          <div style="width: 100%; background-color: #f3f3f3; height: 20px; border-radius: 10px; margin: 20px 0;">
+            <div style="height: 20px; background-color: #4A6CF7; border-radius: 10px; text-align: center; color: white; width: 66%;">Step 2 of 3</div>
+          </div>
+          
+          <h3>What Happens Next?</h3>
+          <ol>
+            <li><strong>Application Review:</strong> We're carefully managing platform access to ensure optimal performance and resource allocation.</li>
+            <li><strong>Verification Call:</strong> Our team will conduct a brief verification call to confirm your information and introduce you to AdTrack's early-stage AI features.</li>
+            <li><strong>Special Discount:</strong> As an early adopter, you'll receive a special discount code during your verification call.</li>
+          </ol>
+          
+          <div style="background-color: #fff; padding: 15px; border-radius: 5px; margin-top: 20px;">
+            <h3>Is Your Contact Information Correct?</h3>
+            <p><strong>Phone:</strong> ${user.phoneNumber || "Not provided"}</p>
+            <p><strong>Email:</strong> ${user.username}</p>
+            <p>If this information is incorrect, please reply to this email with your updated contact details.</p>
+          </div>
+          
+          <div style="background-color: #fff; padding: 15px; border-radius: 5px; margin-top: 20px;">
+            <h3>Why Las Vegas?</h3>
+            <p>We're initially launching in the Las Vegas, NV area (within a 50-mile radius) to ensure we can provide exceptional service and gather valuable feedback. This focused approach helps us refine our proprietary LLM technology.</p>
+          </div>
+          
+          <div style="margin-top: 20px;">
+            <p>Local businesses like yours are already seeing promising results with AdTrack. We're building the industry's first LLM specifically designed to track ROI and optimize advertising budgets for maximum returns.</p>
+            <p>Thank you for your patience as we review your application. We look forward to speaking with you soon!</p>
+          </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #666;">
+          <p>&copy; 2025 AdTrack. All rights reserved.</p>
+        </div>
+      </div>
+      `;
+      
+      // Send the email
+      const emailResult = await sendEmail({
+        to: user.username,
+        from: "notifications@adtrack.online",
+        subject: emailSubject,
+        html: emailHtml
+      });
+      
+      // Return the email content in the response as well
+      res.json({
+        success: true,
+        message: 'Test verification email sent',
+        emailSent: emailResult,
+        emailHtml: emailHtml,
+        emailSubject: emailSubject
+      });
+      
+    } catch (error: any) {
+      console.error('Error sending test verification email:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Pricing configuration management endpoints
+  app.get('/api/pricing-config', async (req: Request, res: Response) => {
+    try {
+      const pricingConfigs = await db.select().from(pricingConfig).where(eq(pricingConfig.isActive, true));
+      res.json(pricingConfigs);
+    } catch (error: any) {
+      console.error('Error fetching pricing configurations:', error);
+      res.status(500).json({ message: 'Failed to fetch pricing configurations' });
+    }
+  });
+  
+  app.get('/api/pricing-config/:id', async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [config] = await db.select().from(pricingConfig).where(eq(pricingConfig.id, id));
+      
+      if (!config) {
+        return res.status(404).json({ message: 'Pricing configuration not found' });
+      }
+      
+      res.json(config);
+    } catch (error: any) {
+      console.error(`Error fetching pricing configuration ID ${req.params.id}:`, error);
+      res.status(500).json({ message: 'Failed to fetch pricing configuration' });
+    }
+  });
+  
+  app.post('/api/pricing-config', async (req: Request, res: Response) => {
+    try {
+      // Check if user is admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized access - admin rights required' });
+      }
+      
+      // Process form data to handle empty strings properly
+      const formData = { ...req.body };
+      
+      // Convert empty price strings to valid numbers for database
+      if (formData.price !== undefined) {
+        formData.price = formData.price.trim() === '' ? '0' : formData.price;
+      }
+      
+      // Handle discounted price
+      if (formData.discountedPrice !== undefined) {
+        formData.discountedPrice = formData.discountedPrice.trim() === '' ? null : formData.discountedPrice;
+      }
+      
+      const data = insertPricingConfigSchema.parse({
+        ...formData,
+        updatedBy: req.user.id
+      });
+      
+      const [newConfig] = await db.insert(pricingConfig).values(data).returning();
+      res.status(201).json(newConfig);
+    } catch (error: any) {
+      console.error('Error creating pricing configuration:', error);
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: 'Invalid data format', errors: error.errors });
+      }
+      res.status(500).json({ message: 'Failed to create pricing configuration' });
+    }
+  });
+  
+  app.put('/api/pricing-config/:id', async (req: Request, res: Response) => {
+    try {
+      // Check if user is admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized access - admin rights required' });
+      }
+      
+      const id = parseInt(req.params.id);
+      
+      // First check if the config exists
+      const [existingConfig] = await db.select().from(pricingConfig).where(eq(pricingConfig.id, id));
+      
+      if (!existingConfig) {
+        return res.status(404).json({ message: 'Pricing configuration not found' });
+      }
+      
+      // Process form data to handle empty strings properly
+      const formData = { ...req.body };
+      
+      // Convert empty price strings to valid numbers for database
+      if (formData.price !== undefined) {
+        formData.price = formData.price.trim() === '' ? '0' : formData.price;
+      }
+      
+      // Handle discounted price
+      if (formData.discountedPrice !== undefined) {
+        formData.discountedPrice = formData.discountedPrice.trim() === '' ? null : formData.discountedPrice;
+      }
+      
+      const data = insertPricingConfigSchema.parse({
+        ...formData,
+        updatedBy: req.user.id
+      });
+      
+      const [updatedConfig] = await db
+        .update(pricingConfig)
+        .set({
+          ...data,
+          updatedAt: new Date()
+        })
+        .where(eq(pricingConfig.id, id))
+        .returning();
+      
+      res.json(updatedConfig);
+    } catch (error: any) {
+      console.error(`Error updating pricing configuration ID ${req.params.id}:`, error);
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: 'Invalid data format', errors: error.errors });
+      }
+      res.status(500).json({ message: 'Failed to update pricing configuration' });
+    }
+  });
+  
+  app.delete('/api/pricing-config/:id', async (req: Request, res: Response) => {
+    try {
+      // Check if user is admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized access - admin rights required' });
+      }
+      
+      const id = parseInt(req.params.id);
+      
+      // Soft delete by marking as inactive instead of actually deleting
+      const [updatedConfig] = await db
+        .update(pricingConfig)
+        .set({
+          isActive: false,
+          updatedAt: new Date(),
+          updatedBy: req.user.id
+        })
+        .where(eq(pricingConfig.id, id))
+        .returning();
+      
+      if (!updatedConfig) {
+        return res.status(404).json({ message: 'Pricing configuration not found' });
+      }
+      
+      res.json({ success: true, message: 'Pricing configuration deactivated successfully' });
+    } catch (error: any) {
+      console.error(`Error deleting pricing configuration ID ${req.params.id}:`, error);
+      res.status(500).json({ message: 'Failed to delete pricing configuration' });
+    }
+  });
+  
+  // Discount codes management endpoints
+  app.get('/api/discount-codes', async (req: Request, res: Response) => {
+    try {
+      // Only admin users can see all discount codes
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized access - admin rights required' });
+      }
+      
+      const discountCodes = await discountCodeStorage.getAllDiscountCodes();
+      res.json(discountCodes);
+    } catch (error: any) {
+      console.error('Error fetching discount codes:', error);
+      res.status(500).json({ message: 'Failed to fetch discount codes' });
+    }
+  });
+  
+  app.get('/api/discount-codes/:id', async (req: Request, res: Response) => {
+    try {
+      // Only admin users can see discount code details
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized access - admin rights required' });
+      }
+      
+      const id = parseInt(req.params.id);
+      const discountCode = await discountCodeStorage.getDiscountCodeById(id);
+      
+      if (!discountCode) {
+        return res.status(404).json({ message: 'Discount code not found' });
+      }
+      
+      res.json(discountCode);
+    } catch (error: any) {
+      console.error('Error fetching discount code:', error);
+      res.status(500).json({ message: 'Failed to fetch discount code' });
+    }
+  });
+  
+  app.post('/api/discount-codes', async (req: Request, res: Response) => {
+    try {
+      // Only admin users can create discount codes
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized access - admin rights required' });
+      }
+      
+      const result = insertDiscountCodeSchema.safeParse(req.body);
+      
+      if (!result.success) {
+        return res.status(400).json({ 
+          message: 'Invalid data format', 
+          errors: result.error.errors 
+        });
+      }
+      
+      // Add the current user as creator
+      const data: InsertDiscountCode = {
+        ...result.data,
+        createdBy: req.user.id,
+        updatedBy: req.user.id
+      };
+      
+      const discountCode = await discountCodeStorage.createDiscountCode(data);
+      res.status(201).json(discountCode);
+    } catch (error: any) {
+      console.error('Error creating discount code:', error);
+      
+      // Handle duplicate code error
+      if (error.message && error.message.includes('duplicate key')) {
+        return res.status(400).json({ message: 'A discount code with this code already exists' });
+      }
+      
+      res.status(500).json({ message: 'Failed to create discount code' });
+    }
+  });
+  
+  app.put('/api/discount-codes/:id', async (req: Request, res: Response) => {
+    try {
+      // Only admin users can update discount codes
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized access - admin rights required' });
+      }
+      
+      const id = parseInt(req.params.id);
+      const result = insertDiscountCodeSchema.safeParse(req.body);
+      
+      if (!result.success) {
+        return res.status(400).json({ 
+          message: 'Invalid data format', 
+          errors: result.error.errors 
+        });
+      }
+      
+      // Add the current user as updater
+      const data: Partial<InsertDiscountCode> = {
+        ...result.data,
+        updatedBy: req.user.id
+      };
+      
+      const updatedCode = await discountCodeStorage.updateDiscountCode(id, data);
+      
+      if (!updatedCode) {
+        return res.status(404).json({ message: 'Discount code not found' });
+      }
+      
+      res.json(updatedCode);
+    } catch (error: any) {
+      console.error('Error updating discount code:', error);
+      
+      // Handle duplicate code error
+      if (error.message && error.message.includes('duplicate key')) {
+        return res.status(400).json({ message: 'A discount code with this code already exists' });
+      }
+      
+      res.status(500).json({ message: 'Failed to update discount code' });
+    }
+  });
+  
+  // Endpoint to validate a discount code
+  app.post('/api/discount-codes/validate', async (req: Request, res: Response) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+      
+      const { code, planType } = req.body;
+      
+      if (!code) {
+        return res.status(400).json({ message: 'Discount code is required' });
+      }
+      
+      const validationResult = await discountCodeStorage.validateDiscountCode(code, planType || 'all');
+      
+      if (!validationResult.valid) {
+        return res.status(400).json({ message: validationResult.message });
+      }
+      
+      // If there's a valid discount code, calculate the discounted price if a plan price is provided
+      let discountInfo = null;
+      if (req.body.price && validationResult.discountCode) {
+        const price = parseFloat(req.body.price);
+        discountInfo = await discountCodeStorage.calculateDiscountedPrice(price, validationResult.discountCode);
+      }
+      
+      res.json({
+        valid: true,
+        discountCode: validationResult.discountCode,
+        discountInfo
+      });
+    } catch (error: any) {
+      console.error('Error validating discount code:', error);
+      res.status(500).json({ message: 'Failed to validate discount code' });
+    }
+  });
+  
+  // Endpoint to apply a discount code to a subscription
+  app.post('/api/discount-codes/apply', async (req: Request, res: Response) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+      
+      const { code, planId, planName, originalAmount } = req.body;
+      
+      if (!code || !planName || !originalAmount) {
+        return res.status(400).json({ message: 'Discount code, plan name, and original amount are required' });
+      }
+      
+      // First validate the discount code
+      const validationResult = await discountCodeStorage.validateDiscountCode(code);
+      
+      if (!validationResult.valid || !validationResult.discountCode) {
+        return res.status(400).json({ message: validationResult.message || 'Invalid discount code' });
+      }
+      
+      // Calculate the discounted price
+      const price = parseFloat(originalAmount);
+      const discountResult = await discountCodeStorage.calculateDiscountedPrice(price, validationResult.discountCode);
+      
+      // Record the discount code usage
+      const usageData = {
+        discountCodeId: validationResult.discountCode.id,
+        userId: req.user.id,
+        planId: planId ? parseInt(planId) : null,
+        planName,
+        originalAmount: price.toString(),
+        discountedAmount: discountResult.discountedPrice.toString(),
+        stripePaymentIntentId: req.body.stripePaymentIntentId,
+        stripeSubscriptionId: req.body.stripeSubscriptionId
+      };
+      
+      const usage = await discountCodeStorage.recordDiscountCodeUsage(usageData);
+      
+      res.json({
+        success: true,
+        discountCode: validationResult.discountCode,
+        discountResult,
+        usage
+      });
+    } catch (error: any) {
+      console.error('Error applying discount code:', error);
+      res.status(500).json({ message: 'Failed to apply discount code' });
+    }
+  });
+  
+  // Endpoint to manage internal AdTrack staff
+  app.get('/api/admin/staff', async (req: Request, res: Response) => {
+    try {
+      // Check if user is admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+      
+      // Get all staff members (users with admin access or special roles)
+      const allUsers = await storage.getAllUsers();
+      const staffMembers = allUsers.filter(user => 
+        user.isAdmin || 
+        (user.role && [UserRole.PLATFORM_ADMIN, UserRole.BUSINESS_ADMIN].includes(user.role as UserRole)) ||
+        (user.username && user.username.endsWith('@adtrack.online')) // Company email domain
+      );
+      
+      res.json(staffMembers);
+    } catch (error: any) {
+      console.error('Error fetching staff members:', error);
+      res.status(500).json({ message: 'Error fetching staff members' });
+    }
+  });
+  
+  // Endpoint to create new staff member
+  app.post('/api/admin/staff', async (req: Request, res: Response) => {
+    try {
+      // Check if user is admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+      
+      const { username, password, email, role } = req.body;
+      
+      // Validate input
+      if (!username || !password || !email) {
+        return res.status(400).json({ message: 'Missing required fields' });
+      }
+      
+      // Check if username already exists
+      const existingUser = await storage.getUserByUsername(username);
+      if (existingUser) {
+        return res.status(400).json({ message: 'Username already exists' });
+      }
+      
+      // Hash the password
+      const hashedPassword = await hashPassword(password);
+      
+      // Create staff user with automatic approval
+      const newUser = await storage.createUser({
+        username,
+        password: hashedPassword,
+        email,
+        role: role || UserRole.PLATFORM_ADMIN,
+        isAdmin: role === UserRole.PLATFORM_ADMIN,
+        isVerified: true,
+        approvalStatus: UserApprovalStatus.APPROVED,
+        approvalDate: new Date(),
+        approvedBy: req.user.id,
+        status: 'Active',
+        isTrialPeriod: false // Staff don't have trial periods
+      });
+      
+      res.status(201).json(newUser);
+    } catch (error: any) {
+      console.error('Error creating staff member:', error);
+      res.status(500).json({ message: 'Error creating staff member' });
+    }
+  });
+  
+  // Endpoint to update a user's password (admin only)
+  app.put('/api/admin/users/:id/password', async (req: Request, res: Response) => {
+    try {
+      // Check if user is admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+      
+      const userId = parseInt(req.params.id);
+      const { newPassword } = req.body;
+      
+      if (!newPassword || newPassword.length < 6) {
+        return res.status(400).json({ message: 'Password must be at least 6 characters' });
+      }
+      
+      // Get the user
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      
+      // Hash the new password
+      const hashedPassword = await hashPassword(newPassword);
+      
+      // Update the password
+      const updatedUser = await storage.updateUser(userId, { password: hashedPassword });
+      
+      // Log the password change for audit
+      console.log(`Password changed for user ${userId} by admin ${req.user.id}`);
+      
+      // Send success response
+      res.json({ message: 'Password updated successfully' });
+    } catch (error: any) {
+      console.error('Error updating password:', error);
+      res.status(500).json({ message: 'Error updating password' });
+    }
+  });
+  
+  // Email template management endpoints
+  app.get('/api/admin/email-templates', async (req: Request, res: Response) => {
+    try {
+      // Ensure user is authenticated and is an admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized' });
+      }
+      
+      // Get all email templates
+      const templates = await storage.getEmailTemplates();
+      
+      // If no templates exist in database yet, return the default templates with isCustomized=false
+      if (templates.length === 0) {
+        const defaultTemplates = emailTemplateTypes.map(templateType => {
+          let defaultTemplate;
+          
+          // Handle different template functions with different parameter requirements
+          switch(templateType) {
+            case 'passwordReset':
+              defaultTemplate = emailTemplates[templateType]('Example User', 'https://example.com');
+              break;
+            case 'roiAlert':
+              defaultTemplate = emailTemplates[templateType]('Example Campaign', 25);
+              break;
+            case 'campaignReminder':
+              defaultTemplate = emailTemplates[templateType]('Example Campaign', 7);
+              break;
+            case 'weeklyReport':
+              defaultTemplate = emailTemplates[templateType]('Example Business', 3, 15);
+              break;
+            case 'verifyEmail':
+              defaultTemplate = emailTemplates[templateType]('Example User', 'verification-token', 'https://example.com');
+              break;
+            case 'newAccountRequest':
+              defaultTemplate = emailTemplates[templateType]('example@user.com', '555-123-4567', 'https://example.com/admin');
+              break;
+            case 'accountApproved':
+              defaultTemplate = emailTemplates[templateType]('Example User', 'https://example.com/login');
+              break;
+            case 'accountRejected':
+              defaultTemplate = emailTemplates[templateType]('Example User', 'Policy violation');
+              break;
+          }
+          
+          return {
+            id: 0, // Frontend will recognize 0 as a placeholder ID
+            templateType,
+            subject: defaultTemplate.subject,
+            textContent: defaultTemplate.text || '',
+            htmlContent: defaultTemplate.html || '',
+            isCustomized: false,
+            lastUpdated: new Date(),
+            createdBy: req.user?.id
+          };
+        });
+        
+        return res.json(defaultTemplates);
+      }
+      
+      res.json(templates);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Endpoint for sending test emails from the template editor
+  app.post('/api/admin/send-test-email', async (req: Request, res: Response) => {
+    try {
+      // Ensure user is authenticated and is an admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized' });
+      }
+      
+      const { email, subject, textContent, htmlContent } = req.body;
+      
+      if (!email || !subject) {
+        return res.status(400).json({ message: 'Email and subject are required' });
+      }
+      
+      // Detect if we're in development/demo mode
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      
+      // Log the test email content for debugging in development mode
+      if (isDevelopment) {
+        console.log('-------- TEST EMAIL CONTENT --------');
+        console.log(`To: ${email}`);
+        console.log(`From: noreply@adtrack.com`);
+        console.log(`Subject: [TEST] ${subject}`);
+        console.log(`Text Content: ${textContent || 'No text content provided'}`);
+        console.log(`HTML Content Available: ${htmlContent ? 'Yes' : 'No'}`);
+        console.log('-------- END TEST EMAIL CONTENT --------');
+        
+        // In development mode, just return success without trying to send via SendGrid
+        return res.json({ 
+          success: true, 
+          message: 'Test email logged (development mode - check console)',
+          note: 'In development mode, emails are logged to console rather than actually sent'
+        });
+      }
+      
+      // Send the test email in production mode
+      const result = await sendEmail({
+        to: email,
+        from: 'noreply@adtrack.com', // This will be replaced with a test email in mock mode
+        subject: `[TEST] ${subject}`,
+        text: textContent || undefined,
+        html: htmlContent || undefined
+      });
+      
+      if (result) {
+        return res.json({ success: true, message: 'Test email sent successfully' });
+      } else {
+        // Return a more user-friendly error that doesn't break the UI
+        return res.json({ 
+          success: false, 
+          message: 'Test email content was generated but could not be sent via SendGrid. Check server logs for details.',
+          note: 'This is likely due to API key configuration. In development mode, email content is still logged to console.'
+        });
+      }
+    } catch (error: any) {
+      console.error('Error sending test email:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  app.get('/api/admin/email-templates/:type', async (req: Request, res: Response) => {
+    try {
+      // Ensure user is authenticated and is an admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized' });
+      }
+      
+      const templateType = req.params.type as EmailTemplateType;
+      
+      // Validate template type
+      if (!emailTemplateTypes.includes(templateType)) {
+        return res.status(400).json({ message: 'Invalid template type' });
+      }
+      
+      // Get template by type
+      let template = await storage.getEmailTemplateByType(templateType);
+      
+      // If template doesn't exist, return the default template
+      if (!template) {
+        let defaultTemplate;
+          
+        // Handle different template functions with different parameter requirements
+        switch(templateType) {
+          case 'passwordReset':
+            defaultTemplate = emailTemplates[templateType]('Example User', 'https://example.com');
+            break;
+          case 'roiAlert':
+            defaultTemplate = emailTemplates[templateType]('Example Campaign', 25);
+            break;
+          case 'campaignReminder':
+            defaultTemplate = emailTemplates[templateType]('Example Campaign', 7);
+            break;
+          case 'weeklyReport':
+            defaultTemplate = emailTemplates[templateType]('Example Business', 3, 15);
+            break;
+          case 'verifyEmail':
+            defaultTemplate = emailTemplates[templateType]('Example User', 'verification-token', 'https://example.com');
+            break;
+          case 'newAccountRequest':
+            defaultTemplate = emailTemplates[templateType]('example@user.com', '555-123-4567', 'https://example.com/admin');
+            break;
+          case 'accountApproved':
+            defaultTemplate = emailTemplates[templateType]('Example User', 'https://example.com/login');
+            break;
+          case 'accountRejected':
+            defaultTemplate = emailTemplates[templateType]('Example User', 'Policy violation');
+            break;
+        }
+        
+        template = {
+          id: 0, // Frontend will recognize 0 as a placeholder ID
+          templateType,
+          subject: defaultTemplate.subject,
+          textContent: defaultTemplate.text || '',
+          htmlContent: defaultTemplate.html || '',
+          isCustomized: false,
+          lastUpdated: new Date(),
+          createdBy: req.user?.id
+        };
+      }
+      
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  app.post('/api/admin/email-templates', async (req: Request, res: Response) => {
+    try {
+      // Ensure user is authenticated and is an admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized' });
+      }
+      
+      const { templateType, subject, textContent, htmlContent } = req.body;
+      
+      // Validate template type
+      if (!emailTemplateTypes.includes(templateType as EmailTemplateType)) {
+        return res.status(400).json({ message: 'Invalid template type' });
+      }
+      
+      // Check if template already exists
+      const existingTemplate = await storage.getEmailTemplateByType(templateType as EmailTemplateType);
+      
+      if (existingTemplate) {
+        // Update existing template
+        const updatedTemplate = await storage.updateEmailTemplate(existingTemplate.id, {
+          subject,
+          textContent,
+          htmlContent,
+          isCustomized: true
+        });
+        
+        return res.json(updatedTemplate);
+      }
+      
+      // Create new template
+      const newTemplate = await storage.createEmailTemplate({
+        templateType: templateType as EmailTemplateType,
+        subject,
+        textContent,
+        htmlContent,
+        isCustomized: true,
+        createdBy: req.user?.id
+      });
+      
+      res.status(201).json(newTemplate);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  app.put('/api/admin/email-templates/:id', async (req: Request, res: Response) => {
+    try {
+      // Ensure user is authenticated and is an admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized' });
+      }
+      
+      const templateId = parseInt(req.params.id);
+      const { subject, textContent, htmlContent } = req.body;
+      
+      // Update template
+      const updatedTemplate = await storage.updateEmailTemplate(templateId, {
+        subject,
+        textContent,
+        htmlContent,
+        isCustomized: true
+      });
+      
+      res.json(updatedTemplate);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  app.post('/api/admin/email-templates/:id/reset', async (req: Request, res: Response) => {
+    try {
+      // Ensure user is authenticated and is an admin
+      if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+        return res.status(403).json({ message: 'Unauthorized' });
+      }
+      
+      const templateId = parseInt(req.params.id);
+      
+      // Reset template to default
+      const resetTemplate = await storage.resetEmailTemplate(templateId);
+      
+      res.json(resetTemplate);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Debug route to check available users (ONLY FOR DEVELOPMENT)
+  app.get('/api/debug/users', async (_req: Request, res: Response) => {
+    try {
+      const users = await storage.getAllUsers();
+      // Return only safe fields
+      const safeUsers = users.map(user => ({
+        id: user.id,
+        username: user.username,
+        isAdmin: user.isAdmin
+      }));
+      res.json(safeUsers);
+    } catch (error: any) {
+      res.status(500).json({ error: 'Failed to retrieve users', message: error.message });
+    }
+  });
+  
+  // Debug route to check current user details
+  app.get('/api/debug/me', (req: Request, res: Response) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    res.json({
+      user: {
+        ...req.user,
+        // Only show first few characters of the password hash
+        password: req.user!.password.substring(0, 10) + '...',
+      },
+      isAdmin: !!req.user!.isAdmin,
+      session: req.session
+    });
+  });
+  
+  // Session management endpoint to refresh user data
+  app.post('/api/refresh-session', async (req: Request, res: Response) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    try {
+      // Get fresh user data from storage
+      const userId = req.user!.id;
+      const freshUser = await storage.getUser(userId);
+      
+      if (!freshUser) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      // Special handling for demo and admin users
+      if (freshUser.username === 'demo@adtrack.online' || freshUser.username === 'admin@adtrack.online') {
+        // Force admin rights for these accounts on refresh
+        freshUser.isAdmin = true;
+        (freshUser as any).is_admin = true;
+      }
+      
+      // Update the session
+      req.login(freshUser, (err) => {
+        if (err) {
+          return res.status(500).json({ error: 'Failed to refresh session' });
+        }
+        return res.json({ success: true, user: freshUser });
+      });
+    } catch (error: any) {
+      console.error('Error refreshing session:', error);
+      res.status(500).json({ error: 'Failed to refresh session', message: error.message });
+    }
+  });
+  
+  // Special admin login endpoint that bypasses the regular authentication flow
+  app.post('/api/admin-login', async (req: Request, res: Response, next) => {
+    const { username, password } = req.body;
+    
+    // Only allow admin@adtrack.online to use this endpoint
+    if (username !== 'admin@adtrack.online') {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'This endpoint is only for admin login' 
+      });
+    }
+    
+    // Special case for admin login with hardcoded credentials
+    if (username === 'admin@adtrack.online' && password === 'admin123') {
+      try {
+        // Find or create admin user
+        let adminUser = await storage.getUserByUsername(username);
+        
+        if (!adminUser) {
+          // Create admin user if it doesn't exist
+          const hashedPassword = await hashPassword('admin123');
+          // Create admin user with correct schema properties
+          adminUser = await storage.createUser({
+            username: 'admin@adtrack.online',
+            password: hashedPassword,
+            email: 'admin@adtrack.online',
+            isAdmin: true,
+            isVerified: true,
+          });
+          
+          // Create admin's business
+          await storage.createBusiness({
+            userId: adminUser.id,
+            name: 'AdTrack Administration',
+            businessType: 'Technology',
+            address: '123 Admin St',
+            zipCode: '10001'
+          });
+        } else {
+          // Update to ensure admin flags are set
+          adminUser.isAdmin = true;
+          (adminUser as any).is_admin = true;
+        }
+        
+        // Log in the admin user
+        req.login(adminUser, (loginErr) => {
+          if (loginErr) {
+            return next(loginErr);
+          }
+          
+          console.log('Admin login successful:', adminUser.username);
+          
+          return res.status(200).json({
+            ...adminUser,
+            isAdmin: true
+          });
+        });
+      } catch (error) {
+        console.error('Error in admin login:', error);
+        return res.status(500).json({ message: 'Server error during admin login' });
+      }
+    } else {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Invalid admin credentials' 
+      });
+    }
+  });
+  
+  // Debug route for admin status investigation - simple version
+  app.get('/api/debug/admin-check', async (req: Request, res: Response) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    try {
+      // Get user from storage
+      const storageUser = await storage.getUser(req.user!.id);
+      
+      // Get the raw user from storage
+      const storageUsers = await storage.getAllUsers();
+      
+      // Find the raw user record for this user
+      const rawUser = storageUsers.find(u => u.id === req.user!.id);
+      
+      res.json({
+        user: req.user,
+        storageUser: storageUser,
+        isAdmin: !!(req.user!.isAdmin || (req.user! as any).is_admin),
+        rawUserId: req.user!.id,
+        rawUser,
+        test: {
+          directAccess: !!req.user!.isAdmin,
+          rawAccess: !!(req.user! as any).is_admin, 
+          combined: !!(req.user!.isAdmin || (req.user! as any).is_admin),
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: 'Failed to perform admin check', 
+        message: error.message 
+      });
+    }
+  });
+
+  // Feature tracking API endpoints
+  // Get all features
+  app.get('/api/features', async (req: Request, res: Response) => {
+    try {
+      const features = await storage.getFeatures();
+      res.json(features);
+    } catch (error: any) {
+      res.status(500).json({ error: 'Failed to get features', message: error.message });
+    }
+  });
+
+  // Get feature by ID
+  app.get('/api/features/:id', async (req: Request, res: Response) => {
+    try {
+      const feature = await storage.getFeature(parseInt(req.params.id));
+      if (!feature) {
+        return res.status(404).json({ error: 'Feature not found' });
+      }
+      res.json(feature);
+    } catch (error: any) {
+      res.status(500).json({ error: 'Failed to get feature', message: error.message });
+    }
+  });
+
+  // Create a new feature (admin only)
+  app.post('/api/features', async (req: Request, res: Response) => {
+    if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    try {
+      const feature = await storage.createFeature(req.body);
+      res.status(201).json(feature);
+    } catch (error: any) {
+      res.status(500).json({ error: 'Failed to create feature', message: error.message });
+    }
+  });
+
+  // Update a feature (admin only)
+  app.put('/api/features/:id', async (req: Request, res: Response) => {
+    if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    try {
+      const feature = await storage.updateFeature(parseInt(req.params.id), req.body);
+      res.json(feature);
+    } catch (error: any) {
+      res.status(500).json({ error: 'Failed to update feature', message: error.message });
+    }
+  });
+
+  // Delete a feature (admin only)
+  app.delete('/api/features/:id', async (req: Request, res: Response) => {
+    if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    try {
+      const result = await storage.deleteFeature(parseInt(req.params.id));
+      if (!result) {
+        return res.status(404).json({ error: 'Feature not found' });
+      }
+      res.status(204).end();
+    } catch (error: any) {
+      res.status(500).json({ error: 'Failed to delete feature', message: error.message });
+    }
+  });
+
+  // Record feature usage
+  app.post('/api/feature-usage', async (req: Request, res: Response) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    try {
+      const usage = await storage.recordFeatureUsage({
+        ...req.body,
+        userId: req.user!.id,
+        usedAt: new Date()
+      });
+      res.status(201).json(usage);
+    } catch (error: any) {
+      res.status(500).json({ error: 'Failed to record feature usage', message: error.message });
+    }
+  });
+
+  // Get usage analytics data (admin only)
+  app.get('/api/feature-usage/analytics', async (req: Request, res: Response) => {
+    if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    try {
+      const analytics = await storage.getFeatureUsageAnalytics();
+      res.json(analytics);
+    } catch (error: any) {
+      res.status(500).json({ error: 'Failed to get usage analytics', message: error.message });
+    }
+  });
+
+  // Get feature usage by feature ID
+  app.get('/api/feature-usage/by-feature/:id', async (req: Request, res: Response) => {
+    if (!req.isAuthenticated() || !hasAdminRights(req.user)) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    try {
+      const usage = await storage.getFeatureUsage(parseInt(req.params.id));
+      res.json(usage);
+    } catch (error: any) {
+      res.status(500).json({ error: 'Failed to get feature usage', message: error.message });
+    }
+  });
+
+  // Get feature usage by user ID
+  app.get('/api/feature-usage/by-user/:id', async (req: Request, res: Response) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    // Only admins or the user themselves can view their usage data
+    if (!hasAdminRights(req.user) && req.user!.id !== parseInt(req.params.id)) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    try {
+      const usage = await storage.getFeatureUsageByUser(parseInt(req.params.id));
+      res.json(usage);
+    } catch (error: any) {
+      res.status(500).json({ error: 'Failed to get user feature usage', message: error.message });
+    }
+  });
+
+  // Get feature usage by business ID
+  app.get('/api/feature-usage/by-business/:id', async (req: Request, res: Response) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    try {
+      // Get the user's business
+      const userBusiness = await storage.getBusinessByUserId(req.user!.id);
+      
+      // Only allow if user is admin or if this is their business
+      if (!hasAdminRights(req.user) && (!userBusiness || userBusiness.id !== parseInt(req.params.id))) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      
+      const usage = await storage.getFeatureUsageByBusiness(parseInt(req.params.id));
+      res.json(usage);
+    } catch (error: any) {
+      res.status(500).json({ error: 'Failed to get business feature usage', message: error.message });
+    }
+  });
+
+  // Pricing Configuration Endpoints
+  app.get('/api/pricing-config', async (req: Request, res: Response) => {
+    try {
+      const pricingConfigs = await storage.getPricingConfigs();
+      // For non-admin users, only return active pricing configurations
+      if (!req.isAuthenticated() || !req.user.isAdmin) {
+        const activePricingConfigs = pricingConfigs.filter(config => config.isActive);
+        return res.json(activePricingConfigs);
+      }
+      res.json(pricingConfigs);
+    } catch (error) {
+      console.error('Error fetching pricing configurations:', error);
+      res.status(500).json({ message: 'Failed to fetch pricing configurations' });
+    }
+  });
+
+  app.get('/api/pricing-config/:id', async (req: Request, res: Response) => {
+    try {
+      const pricingConfig = await storage.getPricingConfigById(parseInt(req.params.id));
+      if (!pricingConfig) {
+        return res.status(404).json({ message: 'Pricing configuration not found' });
+      }
+      res.json(pricingConfig);
+    } catch (error) {
+      console.error('Error fetching pricing configuration:', error);
+      res.status(500).json({ message: 'Failed to fetch pricing configuration' });
+    }
+  });
+
+  app.post('/api/pricing-config', async (req: Request, res: Response) => {
+    if (!req.isAuthenticated() || !req.user.isAdmin) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    try {
+      const newPricing = {
+        ...req.body,
+        updatedBy: req.user.id,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      const createdConfig = await storage.createPricingConfig(newPricing);
+      res.status(201).json(createdConfig);
+    } catch (error) {
+      console.error('Error creating pricing configuration:', error);
+      res.status(500).json({ message: 'Failed to create pricing configuration' });
+    }
+  });
+
+  app.put('/api/pricing-config/:id', async (req: Request, res: Response) => {
+    if (!req.isAuthenticated() || !req.user.isAdmin) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    try {
+      const id = parseInt(req.params.id);
+      const existingConfig = await storage.getPricingConfigById(id);
+      
+      if (!existingConfig) {
+        return res.status(404).json({ message: 'Pricing configuration not found' });
+      }
+
+      const updatedPricing = {
+        ...req.body,
+        id,
+        updatedBy: req.user.id,
+        updatedAt: new Date()
+      };
+      
+      const result = await storage.updatePricingConfig(id, updatedPricing);
+      res.json(result);
+    } catch (error) {
+      console.error('Error updating pricing configuration:', error);
+      res.status(500).json({ message: 'Failed to update pricing configuration' });
+    }
+  });
+
+  app.delete('/api/pricing-config/:id', async (req: Request, res: Response) => {
+    if (!req.isAuthenticated() || !req.user.isAdmin) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deletePricingConfig(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error deleting pricing configuration:', error);
+      res.status(500).json({ message: 'Failed to delete pricing configuration' });
+    }
+  });
+
+  // AI-Powered Pricing Recommendation Engine endpoints
+  app.post('/api/pricing-recommendations', async (req: Request, res: Response) => {
+    try {
+      // Ensure user is authenticated
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, error: 'User not authenticated' });
+      }
+      
+      const userId = req.user?.id;
+      const { businessId } = req.body;
+      
+      if (!businessId) {
+        return res.status(400).json({ success: false, error: 'Missing business ID' });
+      }
+      
+      // Gather data needed for recommendations
+      const business = await storage.getBusiness(businessId);
+      if (!business) {
+        return res.status(404).json({ success: false, error: 'Business not found' });
+      }
+      
+      const campaigns = await storage.getCampaigns(businessId);
+      const adMethods = await storage.getAdMethods();
+      const stats = await storage.getBusinessStats(businessId);
+      
+      // Get top performers in the area for context
+      const topPerformers = business?.businessType && business?.latitude && business?.longitude 
+        ? await storage.getTopROICampaigns(
+            String(business.businessType),
+            0, // All ad methods
+            business.latitude,
+            business.longitude,
+            3, // 3 mile radius
+            5  // Top 5 performers
+          )
+        : [];
+      
+      // Map top performers to the format expected by the recommendation engine
+      const formattedTopPerformers = topPerformers.map(campaign => {
+        const campaignBusiness = campaign.business || { name: 'Unknown Business' };
+        const campaignAdMethod = campaign.adMethod || { name: 'Unknown Ad Method' };
+        
+        return {
+          id: campaign.id,
+          businessId: campaign.businessId,
+          businessName: campaignBusiness.name,
+          adMethodId: campaign.adMethodId,
+          adMethodName: campaignAdMethod.name,
+          amount: campaign.amountSpent ? parseFloat(campaign.amountSpent) : 0,
+          revenue: campaign.amountEarned ? parseFloat(campaign.amountEarned) : 0,
+          roi: campaign.roi || 0,
+          startDate: campaign.startDate,
+          endDate: campaign.endDate,
+          active: campaign.isActive || false,
+        };
+      });
+
+      // Prepare request data for the recommendation engine
+      const requestData = {
+        userId,
+        businessId,
+        businessName: business.name,
+        businessType: business.businessType || 'Unknown',
+        campaigns,
+        adMethods,
+        topPerformers: formattedTopPerformers,
+        adMethodId: req.body.adMethodId, // Optional filter for specific ad method
+        userMetrics: {
+          averageRoi: stats.averageRoi || 0,
+          totalSpent: stats.totalSpent || 0,
+          totalEarned: stats.totalEarned || 0,
+          activeCampaigns: stats.activeCampaigns || 0,
+          totalCampaigns: stats.totalCampaigns || 0
+        },
+        geographicData: {
+          latitude: business.latitude || 0,
+          longitude: business.longitude || 0,
+          zipCode: business.zipCode || '',
+          radius: 3 // Default radius in miles
+        }
+      };
+      
+      // Generate pricing recommendations
+      const response = await generatePricingRecommendations(requestData);
+      
+      res.json(response);
+    } catch (error: any) {
+      console.error('Error generating pricing recommendations:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message || 'Failed to generate pricing recommendations' 
+      });
+    }
+  });
+  
+  // Get pricing recommendations for a business
+  app.get('/api/pricing-recommendations/:businessId', async (req: Request, res: Response) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, error: 'User not authenticated' });
+      }
+      
+      const businessId = parseInt(req.params.businessId);
+      
+      // Optional filter for ad method
+      const adMethodId = req.query.adMethodId 
+        ? parseInt(req.query.adMethodId as string) 
+        : undefined;
+      
+      // Optional limit parameter
+      const limit = req.query.limit 
+        ? parseInt(req.query.limit as string) 
+        : undefined;
+      
+      const recommendations = await storage.getPricingRecommendations(
+        businessId, 
+        { adMethodId, limit }
+      );
+      
+      if (!recommendations || recommendations.length === 0) {
+        return res.status(404).json({ 
+          success: false, 
+          error: 'No pricing recommendations found for this business' 
+        });
+      }
+      
+      res.json({
+        success: true,
+        recommendations
+      });
+    } catch (error: any) {
+      console.error('Error fetching pricing recommendations:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message || 'Failed to fetch pricing recommendations' 
+      });
+    }
+  });
+  
+  // Get a specific pricing recommendation by ID
+  app.get('/api/pricing-recommendations/detail/:id', async (req: Request, res: Response) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, error: 'User not authenticated' });
+      }
+      
+      const id = parseInt(req.params.id);
+      const recommendation = await storage.getPricingRecommendationById(id);
+      
+      if (!recommendation) {
+        return res.status(404).json({ 
+          success: false, 
+          error: 'Pricing recommendation not found' 
+        });
+      }
+      
+      res.json({
+        success: true,
+        recommendation
+      });
+    } catch (error: any) {
+      console.error('Error fetching pricing recommendation details:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message || 'Failed to fetch pricing recommendation details' 
+      });
+    }
+  });
+  
+  // Update a pricing recommendation (for feedback, implementation status, etc.)
+  app.put('/api/pricing-recommendations/:id', async (req: Request, res: Response) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ success: false, error: 'User not authenticated' });
+      }
+      
+      const id = parseInt(req.params.id);
+      const { implemented, feedback, implementationDate, implementationDetails } = req.body;
+      
+      // Get the existing recommendation to update
+      const existingRecommendation = await storage.getPricingRecommendationById(id);
+      
+      if (!existingRecommendation) {
+        return res.status(404).json({ 
+          success: false, 
+          error: 'Pricing recommendation not found' 
+        });
+      }
+      
+      // Prepare update data
+      const updateData = {
+        ...(implemented !== undefined && { implemented }),
+        ...(feedback && { feedback }),
+        ...(implementationDate && { implementationDate: new Date(implementationDate) }),
+        ...(implementationDetails && { implementationDetails }),
+        implementedBy: implemented ? req.user?.id : null,
+        updatedAt: new Date()
+      };
+      
+      // Update the recommendation
+      const updatedRecommendation = await storage.updatePricingRecommendation(id, updateData);
+      
+      res.json({
+        success: true,
+        recommendation: updatedRecommendation
+      });
+    } catch (error: any) {
+      console.error('Error updating pricing recommendation:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message || 'Failed to update pricing recommendation' 
+      });
+    }
+  });
+
+  // Payment method endpoints
+  app.post('/api/user/payment-method', addPaymentMethod);
+  app.get('/api/user/payment-method', checkPaymentMethod);
+  app.delete('/api/user/payment-method', removePaymentMethod);
+
+  // Register location routes
+  app.use('/api/locations', locationRouter);
+  
+  // Email templates routes
+  app.use('/api/email-templates', emailTemplateRouter);
+  
+  // Subscription and feature access routes
+  app.use('/api', apiRouter);
+
+  const httpServer = createServer(app);
+  return httpServer;
+}

@@ -1,0 +1,479 @@
+import passport from "passport";
+import { Strategy as LocalStrategy } from "passport-local";
+import { Express, Request, Response, NextFunction } from "express";
+import session from "express-session";
+import { scrypt, randomBytes, timingSafeEqual } from "crypto";
+import { promisify } from "util";
+import { storage } from "./storage";
+import { User as SelectUser } from "@shared/schema";
+import { sendEmail, emailTemplates } from "./email";
+
+declare global {
+  namespace Express {
+    interface User extends SelectUser {}
+  }
+}
+
+const scryptAsync = promisify(scrypt);
+
+async function hashPassword(password: string) {
+  const salt = randomBytes(16).toString("hex");
+  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
+  return `${buf.toString("hex")}.${salt}`;
+}
+
+async function comparePasswords(supplied: string, stored: string) {
+  const [hashed, salt] = stored.split(".");
+  const hashedBuf = Buffer.from(hashed, "hex");
+  const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
+  return timingSafeEqual(hashedBuf, suppliedBuf);
+}
+
+// Export the password functions for use in other files
+export { hashPassword, comparePasswords };
+
+export function setupAuth(app: Express) {
+  const sessionSettings: session.SessionOptions = {
+    secret: process.env.SESSION_SECRET || "adtrack-secret-key",
+    resave: false,
+    saveUninitialized: false,
+    store: storage.sessionStore,
+    cookie: {
+      maxAge: 1000 * 60 * 60 * 24, // 1 day
+    }
+  };
+
+  app.set("trust proxy", 1);
+  app.use(session(sessionSettings));
+  app.use(passport.initialize());
+  app.use(passport.session());
+
+  passport.use(
+    new LocalStrategy(async (username, password, done) => {
+      try {
+        const user = await storage.getUserByUsername(username);
+        
+        // Check if user exists and password matches
+        if (!user || !(await comparePasswords(password, user.password))) {
+          return done(null, false, { message: "Invalid username or password" });
+        }
+        
+        // Check if account is verified (skipping for demo accounts)
+        if (!user.isVerified && !user.username.includes("demo@adtrack")) {
+          return done(null, false, { message: "Please verify your email before logging in" });
+        }
+        
+        // All checks passed, authenticate user
+        return done(null, user);
+      } catch (error) {
+        return done(error);
+      }
+    }),
+  );
+
+  passport.serializeUser((user, done) => {
+    done(null, user.id);
+  });
+  
+  passport.deserializeUser(async (id: number, done) => {
+    try {
+      const user = await storage.getUser(id);
+      done(null, user);
+    } catch (error) {
+      done(error);
+    }
+  });
+
+  // Helper function to generate random token
+  function generateVerificationToken(): string {
+    return randomBytes(32).toString('hex');
+  }
+
+  app.post("/api/register", async (req, res, next) => {
+    try {
+      const existingUser = await storage.getUserByUsername(req.body.username);
+      if (existingUser) {
+        return res.status(400).json({ message: "Username already exists" });
+      }
+
+      // Generate verification token
+      const verificationToken = generateVerificationToken();
+      
+      // Create user with hashed password and verification token
+      const user = await storage.createUser({
+        ...req.body,
+        password: await hashPassword(req.body.password),
+        isAdmin: false, // New users are not admins by default
+        email: req.body.username, // Using username as email (since we use email for login)
+        isVerified: false,
+        verificationToken: verificationToken
+      });
+
+      // Create business profile
+      const business = await storage.createBusiness({
+        userId: user.id,
+        name: req.body.businessName,
+        businessType: req.body.businessType,
+        address: req.body.address,
+        zipCode: req.body.zipCode,
+        latitude: null, // In a real app, we would use geocoding here
+        longitude: null
+      });
+
+      // Send verification email
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const emailTemplate = emailTemplates.verifyEmail(user.username, verificationToken, baseUrl);
+      
+      try {
+        await sendEmail({
+          to: user.username,
+          from: "noreply@adtrack.com",
+          subject: emailTemplate.subject,
+          text: emailTemplate.text,
+          html: emailTemplate.html
+        });
+        
+        console.log("Verification email sent successfully to:", user.username);
+        
+        // Return the user info but don't log them in automatically
+        return res.status(201).json({
+          ...user,
+          businessId: business.id,
+          requiresVerification: true,
+          message: "Registration successful. Please check your email to verify your account."
+        });
+      } catch (err) {
+        console.error('Error sending verification email:', err);
+        
+        // Still return success but with a warning about email
+        return res.status(201).json({
+          ...user,
+          businessId: business.id,
+          requiresVerification: true,
+          emailError: true,
+          message: "Account created but there was a problem sending the verification email. Please use the resend option."
+        });
+      }
+    } catch (error: any) {
+      return res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/login", (req, res, next) => {
+    passport.authenticate("local", (err: any, user: any, info: any) => {
+      if (err) {
+        return next(err);
+      }
+      
+      if (!user) {
+        // Authentication failed, return the error message
+        return res.status(401).json({ 
+          success: false, 
+          message: info?.message || "Authentication failed" 
+        });
+      }
+      
+      // Check if email is verified (skipping for demo accounts)
+      if (!user.isVerified && !user.username.includes("demo@adtrack")) {
+        return res.status(401).json({
+          success: false,
+          message: "Please verify your email before logging in. Check your inbox for the verification link."
+        });
+      }
+      
+      // Login successful, establish the session
+      req.login(user, (loginErr) => {
+        if (loginErr) {
+          return next(loginErr);
+        }
+        
+        // Find the business ID for this user
+        storage.getBusinessByUserId(user.id).then(business => {
+          res.status(200).json({
+            ...user,
+            businessId: business?.id,
+            // Map DB property is_admin to isAdmin for consistent property naming
+            isAdmin: !!user.is_admin
+          });
+        }).catch(() => {
+          // If there's an error, just return the user without the business ID
+          res.status(200).json({
+            ...user,
+            // Map DB property is_admin to isAdmin for consistent property naming
+            isAdmin: !!user.is_admin
+          });
+        });
+      });
+    })(req, res, next);
+  });
+
+  app.post("/api/logout", (req, res, next) => {
+    req.logout((err) => {
+      if (err) return next(err);
+      res.sendStatus(200);
+    });
+  });
+  
+  // Check verification status endpoint
+  app.post("/api/check-verification", async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+      
+      // Find user by email
+      const user = await storage.getUserByUsername(email);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Return verification status
+      return res.status(200).json({ 
+        isVerified: user.isVerified,
+        email: user.username
+      });
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Resend verification email endpoint
+  app.post("/api/resend-verification", async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+      
+      // Find user by email
+      const user = await storage.getUserByUsername(email);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Check if already verified
+      if (user.isVerified) {
+        return res.status(400).json({ message: "Email is already verified" });
+      }
+      
+      // Generate a new verification token
+      const verificationToken = generateVerificationToken();
+      
+      // Update user with new token
+      await storage.updateUser(user.id, {
+        verificationToken: verificationToken
+      });
+      
+      // Send verification email
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const emailTemplate = emailTemplates.verifyEmail(user.username, verificationToken, baseUrl);
+      
+      await sendEmail({
+        to: user.username,
+        from: "noreply@adtrack.online",
+        subject: emailTemplate.subject,
+        text: emailTemplate.text,
+        html: emailTemplate.html
+      });
+      
+      res.status(200).json({ 
+        success: true, 
+        message: "Verification email has been sent" 
+      });
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/user", (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    // Find the business ID for this user
+    storage.getBusinessByUserId(req.user!.id).then(business => {
+      res.json({
+        ...req.user,
+        businessId: business?.id,
+        // Map DB property is_admin to isAdmin for consistent property naming
+        isAdmin: !!req.user!.is_admin
+      });
+    }).catch(() => {
+      // If there's an error, just return the user without the business ID
+      res.json({
+        ...req.user,
+        // Map DB property is_admin to isAdmin for consistent property naming
+        isAdmin: !!req.user!.is_admin
+      });
+    });
+  });
+
+  // Change password endpoint
+  app.post('/api/change-password', async (req, res) => {
+    // Check if user is authenticated
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: 'You must be logged in to change your password' });
+    }
+    
+    try {
+      const { currentPassword, newPassword } = req.body;
+      
+      // Validate input
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ message: 'Current password and new password are required' });
+      }
+      
+      // Get the current user
+      const user = await storage.getUser(req.user!.id);
+      
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      
+      // Check if the current password is correct
+      if (!(await comparePasswords(currentPassword, user.password))) {
+        return res.status(400).json({ message: 'Current password is incorrect' });
+      }
+      
+      // Hash the new password
+      const hashedPassword = await hashPassword(newPassword);
+      
+      // Update the user's password
+      await storage.updateUser(req.user!.id, { password: hashedPassword });
+      
+      res.json({ message: 'Password updated successfully' });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Email verification endpoint
+  app.get("/api/verify-email", async (req, res) => {
+    try {
+      const { token } = req.query;
+      
+      if (!token || typeof token !== 'string') {
+        return res.status(400).json({ message: "Invalid verification token" });
+      }
+      
+      // Find user with this verification token
+      const user = await storage.getUserByVerificationToken(token);
+      
+      if (!user) {
+        return res.status(400).json({ message: "Token not found or already used" });
+      }
+      
+      // Update user to verified status
+      const verifiedUser = await storage.updateUser(user.id, {
+        isVerified: true,
+        verificationToken: null
+      });
+      
+      // Redirect to login page with success message
+      return res.redirect('/auth?verified=true');
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Demo account creation endpoint
+  app.post("/api/demo-account", async (req, res, next) => {
+    try {
+      // Check if demo account exists already - check for both old and new domain formats
+      let existingUser = await storage.getUserByUsername("demo@adtrack.online");
+      
+      if (!existingUser) {
+        // If not found with .online domain, check with .com domain
+        existingUser = await storage.getUserByUsername("demo@adtrack.com");
+        
+        // If found with old domain, update it to the new domain
+        if (existingUser) {
+          existingUser = await storage.updateUser(existingUser.id, {
+            username: "demo@adtrack.online",
+            email: "demo@adtrack.online",
+            isAdmin: true // Ensure admin flag is set
+          });
+        }
+      }
+      
+      if (existingUser) {
+        // If demo user exists, log them in directly
+        req.login(existingUser, async (err) => {
+          if (err) return next(err);
+          
+          const business = await storage.getBusinessByUserId(existingUser.id);
+          return res.status(200).json({
+            ...existingUser,
+            businessId: business?.id,
+            isAdmin: !!existingUser.is_admin
+          });
+        });
+      } else {
+        // Create a new demo user with known password for easy access
+        const demoPassword = await hashPassword("demo123");
+        
+        // Create demo user with verified status (demo accounts don't need verification)
+        const user = await storage.createUser({
+          username: "demo@adtrack.online",
+          password: demoPassword,
+          isAdmin: true, // Set as admin for testing
+          email: "demo@adtrack.online",
+          isVerified: true
+        });
+        
+        // Create demo business
+        const business = await storage.createBusiness({
+          userId: user.id,
+          name: "Demo Business",
+          businessType: "Retail",
+          address: "123 Demo Street, Demo City",
+          zipCode: "12345",
+          latitude: 40.7128, // NYC coordinates for demo
+          longitude: -74.0060
+        });
+        
+        // Create some sample campaigns to demonstrate functionality
+        await storage.createCampaign({
+          businessId: business.id,
+          name: "Sample Social Media Campaign",
+          description: "Facebook and Instagram promotional campaign",
+          adMethodId: 1, // Assuming Social Media is ID 1
+          startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
+          endDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), // Yesterday
+          isActive: false,
+          amountSpent: "500",
+          amountEarned: "1200",
+          fileUrl: null
+        });
+        
+        await storage.createCampaign({
+          businessId: business.id,
+          name: "Sample Email Marketing Campaign",
+          description: "Monthly newsletter promotion",
+          adMethodId: 2, // Assuming Email Marketing is ID 2
+          startDate: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000), // 15 days ago
+          endDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days in future
+          isActive: true,
+          amountSpent: "200",
+          amountEarned: "350",
+          fileUrl: null
+        });
+        
+        // Log the demo user in
+        req.login(user, (err) => {
+          if (err) return next(err);
+          return res.status(201).json({
+            ...user,
+            businessId: business.id,
+            isAdmin: !!(user.is_admin || user.isAdmin)
+          });
+        });
+      }
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+}
